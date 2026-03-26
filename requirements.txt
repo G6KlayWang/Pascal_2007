@@ -1,0 +1,11 @@
+torch>=2.4
+torchvision>=0.19
+numpy>=1.24
+pandas>=2.0
+matplotlib>=3.8
+scikit-learn>=1.4
+scipy>=1.11
+Pillow>=10.0
+PyYAML>=6.0
+tqdm>=4.66
+git+https://github.com/facebookresearch/sam2.git

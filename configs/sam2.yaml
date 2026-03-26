@@ -1,0 +1,41 @@
+experiment:
+  name: pascal_voc_sam2
+  run_name: sam2-default
+  output_root: outputs
+  seed: 42
+  device:
+dataset:
+  root: data
+  download: true
+  image_size: 384
+  num_workers: 2
+  internal_val_ratio: 0.1
+  split_seed: 42
+model:
+  type: sam2
+  sam2_config: sam2_hiera_t.yaml
+  sam2_checkpoint: checkpoints/sam2_hiera_tiny.pt
+  freeze_backbone: true
+train:
+  epochs: 30
+  batch_size: 4
+  accum_steps: 2
+  optimizer: adamw
+  lr: 0.0005
+  backbone_lr: 0.00005
+  weight_decay: 0.0001
+  warmup_epochs: 3
+  early_stopping_patience: 6
+  amp: true
+  grad_clip: 1.0
+  use_ema: false
+  ema_decay: 0.999
+loss:
+  name: ce_dice
+  ce_weight: 1.0
+  dice_weight: 1.0
+augmentation:
+  enabled: true
+eval:
+  batch_size: 2
+  best_worst_class: person

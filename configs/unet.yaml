@@ -1,0 +1,40 @@
+experiment:
+  name: pascal_voc_unet
+  run_name: unet-default
+  output_root: outputs
+  seed: 42
+  device:
+dataset:
+  root: data
+  download: true
+  image_size: 384
+  num_workers: 2
+  internal_val_ratio: 0.1
+  split_seed: 42
+model:
+  type: unet
+  encoder: resnet18
+  pretrained: true
+train:
+  epochs: 40
+  batch_size: 8
+  accum_steps: 1
+  optimizer: adamw
+  lr: 0.0003
+  backbone_lr: 0.0001
+  weight_decay: 0.0001
+  warmup_epochs: 3
+  early_stopping_patience: 8
+  amp: true
+  grad_clip: 1.0
+  use_ema: true
+  ema_decay: 0.999
+loss:
+  name: ce_dice
+  ce_weight: 1.0
+  dice_weight: 1.0
+augmentation:
+  enabled: true
+eval:
+  batch_size: 4
+  best_worst_class: person
