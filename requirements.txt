@@ -8,4 +8,5 @@ scipy>=1.11
 Pillow>=10.0
 PyYAML>=6.0
 tqdm>=4.66
+kaggle>=1.6
 git+https://github.com/facebookresearch/sam2.git

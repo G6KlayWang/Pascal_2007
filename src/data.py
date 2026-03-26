@@ -2,16 +2,18 @@ from __future__ import annotations
 
 import json
 import random
+import shutil
+import subprocess
 from collections import Counter
 from pathlib import Path
 from typing import Any
+import zipfile
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from PIL import Image
 from torch.utils.data import DataLoader, Dataset
-from torchvision.datasets import VOCSegmentation
 from torchvision.transforms import ColorJitter
 from torchvision.transforms import functional as F
 from tqdm import tqdm
@@ -20,17 +22,53 @@ from src.constants import IGNORE_INDEX, IMAGENET_MEAN, IMAGENET_STD, NUM_CLASSES
 from src.utils import ensure_dir, save_csv, save_json
 
 
+def _find_voc_root(root: Path) -> Path | None:
+    direct = root / "VOCdevkit" / "VOC2007"
+    if direct.exists():
+        return direct
+    for candidate in root.glob("**/VOCdevkit/VOC2007"):
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
 def maybe_download_voc(root: str | Path, download: bool) -> Path:
     root = Path(root)
-    voc_root = root / "VOCdevkit" / "VOC2007"
-    if voc_root.exists():
+    voc_root = _find_voc_root(root)
+    if voc_root is not None:
         return voc_root
     if not download:
         raise FileNotFoundError(
-            f"Pascal VOC 2007 not found under {voc_root}. Set dataset.download=true or place the dataset there."
+            f"Pascal VOC 2007 not found under {root}. Set dataset.download=true or place the dataset there."
         )
-    VOCSegmentation(root=str(root), year="2007", image_set="train", download=True)
-    VOCSegmentation(root=str(root), year="2007", image_set="val", download=True)
+    ensure_dir(root)
+    if shutil.which("kaggle") is None:
+        raise RuntimeError(
+            "Kaggle CLI is not installed. Install it with requirements.txt or `pip install kaggle`, then authenticate it."
+        )
+
+    archive_path = root / "pascal-voc-2007.zip"
+    cmd = [
+        "kaggle",
+        "datasets",
+        "download",
+        "zaraks/pascal-voc-2007",
+        "-p",
+        str(root),
+        "--force",
+    ]
+    subprocess.run(cmd, check=True)
+    if not archive_path.exists():
+        raise FileNotFoundError(f"Expected Kaggle archive at {archive_path}, but it was not created.")
+
+    with zipfile.ZipFile(archive_path, "r") as archive:
+        archive.extractall(root)
+
+    voc_root = _find_voc_root(root)
+    if voc_root is None:
+        raise FileNotFoundError(
+            "Downloaded archive extracted successfully, but VOCdevkit/VOC2007 was not found under the dataset root."
+        )
     return voc_root
 
 
