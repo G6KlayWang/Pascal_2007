@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+
+outputs/
+.codex_tmp/
+data/
+checkpoints/
+
+.DS_Store
