@@ -13,13 +13,13 @@ dataset:
   split_seed: 42
 model:
   type: sam2
-  sam2_config: sam2_hiera_t.yaml
-  sam2_checkpoint: checkpoints/sam2_hiera_tiny.pt
+  sam2_config: sam2.1_hiera_l.yaml
+  sam2_checkpoint: checkpoints/sam2.1_hiera_large.pt
   freeze_backbone: true
 train:
   epochs: 30
-  batch_size: 4
-  accum_steps: 2
+  batch_size: 1
+  accum_steps: 4
   optimizer: adamw
   lr: 0.0005
   backbone_lr: 0.00005
