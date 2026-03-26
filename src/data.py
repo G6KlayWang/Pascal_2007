@@ -22,14 +22,34 @@ from src.constants import IGNORE_INDEX, IMAGENET_MEAN, IMAGENET_STD, NUM_CLASSES
 from src.utils import ensure_dir, save_csv, save_json
 
 
+def _has_segmentation_split(voc_root: Path, split: str) -> bool:
+    return (voc_root / "ImageSets" / "Segmentation" / f"{split}.txt").exists()
+
+
 def _find_voc_root(root: Path) -> Path | None:
     direct = root / "VOCdevkit" / "VOC2007"
+    candidates: list[Path] = []
     if direct.exists():
-        return direct
-    for candidate in root.glob("**/VOCdevkit/VOC2007"):
-        if candidate.is_dir():
+        candidates.append(direct)
+    candidates.extend(candidate for candidate in root.glob("**/VOCdevkit/VOC2007") if candidate.is_dir())
+    if not candidates:
+        return None
+
+    unique_candidates: list[Path] = []
+    seen = set()
+    for candidate in candidates:
+        resolved = candidate.resolve()
+        if resolved not in seen:
+            seen.add(resolved)
+            unique_candidates.append(candidate)
+
+    for candidate in unique_candidates:
+        if _has_segmentation_split(candidate, "train") and _has_segmentation_split(candidate, "val"):
             return candidate
-    return None
+    for candidate in unique_candidates:
+        if _has_segmentation_split(candidate, "train"):
+            return candidate
+    return unique_candidates[0]
 
 
 def maybe_download_voc(root: str | Path, download: bool) -> Path:
