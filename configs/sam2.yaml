@@ -13,7 +13,7 @@ dataset:
   split_seed: 42
 model:
   type: sam2
-  sam2_config: sam2.1_hiera_l.yaml
+  sam2_config: sam2_configs/sam2.1_hiera_l.yaml
   sam2_checkpoint: checkpoints/sam2.1_hiera_large.pt
   freeze_backbone: true
 train:

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import torch
@@ -134,12 +134,21 @@ class SAM2SemanticSeg(nn.Module):
         super().__init__()
         try:
             from sam2.build_sam import build_sam2
+            from hydra import initialize_config_dir
+            from hydra.core.global_hydra import GlobalHydra
         except ImportError as exc:
             raise ImportError(
                 "SAM2 is not installed. Install dependencies from requirements.txt and download the SAM2 checkpoint."
             ) from exc
 
-        self.backbone = build_sam2(sam2_config, sam2_checkpoint, device=device)
+        config_path = Path(sam2_config)
+        if config_path.exists():
+            GlobalHydra.instance().clear()
+            with initialize_config_dir(version_base=None, config_dir=str(config_path.resolve().parent)):
+                self.backbone = build_sam2(config_path.name, sam2_checkpoint, device=device)
+            GlobalHydra.instance().clear()
+        else:
+            self.backbone = build_sam2(sam2_config, sam2_checkpoint, device=device)
         if freeze_backbone:
             for param in self.backbone.parameters():
                 param.requires_grad = False
