@@ -87,7 +87,7 @@ def run_epoch(
     criterion: SegmentationLoss,
     optimizer: torch.optim.Optimizer | None,
     device: torch.device,
-    scaler: torch.cuda.amp.GradScaler | None,
+    scaler: torch.amp.GradScaler | None,
     accum_steps: int,
     grad_clip: float,
     ema: EMA | None = None,
@@ -204,7 +204,7 @@ def fit(
     scheduler = create_scheduler(optimizer, config)
     train_cfg = config["train"]
     use_amp = bool(train_cfg.get("amp", True) and device.type == "cuda")
-    scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
+    scaler = torch.amp.GradScaler(device="cuda", enabled=use_amp)
     accum_steps = int(train_cfg.get("accum_steps", 1))
     grad_clip = float(train_cfg.get("grad_clip", 0.0))
     patience = int(train_cfg.get("early_stopping_patience", 10))
