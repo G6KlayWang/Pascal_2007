@@ -7,7 +7,7 @@ from pathlib import Path
 import torch
 
 from src.config import apply_overrides, load_config
-from src.data import build_dataloaders
+from src.data import build_dataloaders, compute_class_weights
 from src.engine import fit
 from src.losses import SegmentationLoss
 from src.models import build_model
@@ -26,9 +26,17 @@ def main() -> None:
     config = apply_overrides(load_config(args.config), args.overrides)
     seed_everything(config["experiment"]["seed"])
     device = device_from_config(config["experiment"].get("device"))
-    loaders, _, _ = build_dataloaders(config)
+    loaders, voc_root, split_manifest = build_dataloaders(config)
     model = build_model(config, device)
-    criterion = SegmentationLoss(config)
+    class_weights = None
+    if config["loss"].get("use_class_weights", False):
+        class_weights = compute_class_weights(
+            voc_root=voc_root,
+            sample_ids=split_manifest["train"],
+            power=float(config["loss"].get("class_weight_power", 0.5)),
+            clip_max=float(config["loss"].get("class_weight_clip_max", 10.0)),
+        ).to(device)
+    criterion = SegmentationLoss(config, class_weights=class_weights)
 
     run_name = config["experiment"].get("run_name") or f"{config['model']['type']}-{timestamp()}"
     run_dir = ensure_dir(Path(config["experiment"]["output_root"]) / "train_logs" / config["model"]["type"] / run_name)

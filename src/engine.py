@@ -208,6 +208,8 @@ def fit(
     accum_steps = int(train_cfg.get("accum_steps", 1))
     grad_clip = float(train_cfg.get("grad_clip", 0.0))
     patience = int(train_cfg.get("early_stopping_patience", 10))
+    min_epochs_before_stopping = int(train_cfg.get("min_epochs_before_stopping", 0))
+    min_delta = float(train_cfg.get("early_stopping_min_delta", 0.0))
     use_ema = bool(train_cfg.get("use_ema", False))
     ema = EMA(model, train_cfg.get("ema_decay", 0.999)) if use_ema else None
 
@@ -244,7 +246,7 @@ def fit(
         }
         history.append(row)
         current_metric = val_summary["mean_iou"]
-        if current_metric > best_metric:
+        if current_metric > best_metric + min_delta:
             best_metric = current_metric
             best_epoch = epoch
             best_state = deepcopy(eval_model.state_dict())
@@ -272,7 +274,7 @@ def fit(
         )
         if ema is not None:
             del eval_model
-        if bad_epochs >= patience:
+        if epoch >= min_epochs_before_stopping and bad_epochs >= patience:
             break
 
     save_csv(log_dir / "history.csv", history)

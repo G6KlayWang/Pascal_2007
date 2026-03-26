@@ -13,26 +13,31 @@ dataset:
   split_seed: 42
 model:
   type: unet
-  encoder: resnet18
+  encoder: resnet50
   pretrained: true
 train:
-  epochs: 40
-  batch_size: 8
-  accum_steps: 1
+  epochs: 60
+  batch_size: 4
+  accum_steps: 2
   optimizer: adamw
-  lr: 0.0003
+  lr: 0.0005
   backbone_lr: 0.0001
   weight_decay: 0.0001
-  warmup_epochs: 3
-  early_stopping_patience: 8
+  warmup_epochs: 5
+  early_stopping_patience: 15
+  min_epochs_before_stopping: 25
+  early_stopping_min_delta: 0.0005
   amp: true
   grad_clip: 1.0
   use_ema: true
   ema_decay: 0.999
 loss:
   name: ce_dice
-  ce_weight: 1.0
+  ce_weight: 2.0
   dice_weight: 1.0
+  use_class_weights: true
+  class_weight_power: 0.5
+  class_weight_clip_max: 8.0
 augmentation:
   enabled: true
 eval:

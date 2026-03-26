@@ -229,6 +229,28 @@ def build_dataloaders(config: dict[str, Any]) -> tuple[dict[str, DataLoader], Pa
     return loaders, voc_root, split_manifest
 
 
+def compute_class_weights(
+    voc_root: str | Path,
+    sample_ids: list[str],
+    power: float = 0.5,
+    clip_max: float = 10.0,
+) -> torch.Tensor:
+    counts = np.zeros(NUM_CLASSES, dtype=np.float64)
+    for sample_id in tqdm(sample_ids, desc="Computing class weights", leave=False):
+        mask = Image.open(Path(voc_root) / "SegmentationClass" / f"{sample_id}.png")
+        mask_np = np.array(mask, dtype=np.int64)
+        valid = mask_np[mask_np != IGNORE_INDEX]
+        bincount = np.bincount(valid, minlength=NUM_CLASSES)
+        counts += bincount[:NUM_CLASSES]
+
+    counts = np.maximum(counts, 1.0)
+    frequencies = counts / counts.sum()
+    weights = 1.0 / np.power(frequencies, power)
+    weights = weights / weights.mean()
+    weights = np.clip(weights, 0.0, clip_max)
+    return torch.tensor(weights, dtype=torch.float32)
+
+
 def build_data_overview(voc_root: str | Path, split_manifest: dict[str, list[str]], output_dir: str | Path, sample_count: int = 8) -> None:
     output_dir = ensure_dir(output_dir)
     rows = []
