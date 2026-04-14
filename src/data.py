@@ -27,10 +27,11 @@ def _has_segmentation_split(voc_root: Path, split: str) -> bool:
 
 
 def _find_voc_root(root: Path) -> Path | None:
-    direct = root / "VOCdevkit" / "VOC2007"
-    candidates: list[Path] = []
-    if direct.exists():
-        candidates.append(direct)
+    preferred_candidates = [
+        root / "VOCtrainval_06-Nov-2007" / "VOCdevkit" / "VOC2007",
+        root / "VOCdevkit" / "VOC2007",
+    ]
+    candidates: list[Path] = [candidate for candidate in preferred_candidates if candidate.exists()]
     candidates.extend(candidate for candidate in root.glob("**/VOCdevkit/VOC2007") if candidate.is_dir())
     if not candidates:
         return None
