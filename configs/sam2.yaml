@@ -17,7 +17,6 @@ model:
   sam2_checkpoint: ./checkpoints/sam2.1_hiera_large.pt
   freeze_backbone: true
   unfreeze_patterns:
-    - image_encoder.trunk.blocks.9
     - image_encoder.trunk.blocks.10
     - image_encoder.trunk.blocks.11
     - image_encoder.trunk.neck
@@ -29,7 +28,7 @@ train:
   decoder_lr: 0.0005
   backbone_lr: 0.00005
   weight_decay: 0.0001
-  warmup_epochs: 5
+  warmup_epochs: 10
   early_stopping_patience: 25
   min_epochs_before_stopping: 50
   early_stopping_min_delta: 0.0002
@@ -40,7 +39,7 @@ train:
 loss:
   name: ce_dice
   ce_weight: 1.0
-  dice_weight: 1.0
+  dice_weight: 2.0
   use_class_weights: false
 augmentation:
   enabled: true
