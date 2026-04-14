@@ -13,12 +13,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from PIL import Image
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, DistributedSampler
 from torchvision.transforms import ColorJitter
 from torchvision.transforms import functional as F
 from tqdm import tqdm
 
 from src.constants import IGNORE_INDEX, IMAGENET_MEAN, IMAGENET_STD, NUM_CLASSES, VOC_CLASSES
+from src.dist import is_distributed, world_size
 from src.utils import ensure_dir, save_csv, save_json
 
 
@@ -236,11 +237,21 @@ def build_dataloaders(config: dict[str, Any]) -> tuple[dict[str, DataLoader], Pa
         "persistent_workers": num_workers > 0,
         "prefetch_factor": 4 if num_workers > 0 else None,
     }
-    loaders = {
-        "train": DataLoader(train_ds, batch_size=batch_size, shuffle=True, drop_last=True, **loader_kwargs),
-        "val_internal": DataLoader(val_ds, batch_size=eval_batch_size, shuffle=False, **loader_kwargs),
-        "test": DataLoader(test_ds, batch_size=eval_batch_size, shuffle=False, **loader_kwargs),
-    }
+    if is_distributed():
+        train_sampler = DistributedSampler(train_ds, shuffle=True, drop_last=True)
+        val_sampler = DistributedSampler(val_ds, shuffle=False, drop_last=False)
+        test_sampler = DistributedSampler(test_ds, shuffle=False, drop_last=False)
+        loaders = {
+            "train": DataLoader(train_ds, batch_size=batch_size, sampler=train_sampler, drop_last=True, **loader_kwargs),
+            "val_internal": DataLoader(val_ds, batch_size=eval_batch_size, sampler=val_sampler, **loader_kwargs),
+            "test": DataLoader(test_ds, batch_size=eval_batch_size, sampler=test_sampler, **loader_kwargs),
+        }
+    else:
+        loaders = {
+            "train": DataLoader(train_ds, batch_size=batch_size, shuffle=True, drop_last=True, **loader_kwargs),
+            "val_internal": DataLoader(val_ds, batch_size=eval_batch_size, shuffle=False, **loader_kwargs),
+            "test": DataLoader(test_ds, batch_size=eval_batch_size, shuffle=False, **loader_kwargs),
+        }
     return loaders, voc_root, split_manifest
 
 

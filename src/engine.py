@@ -11,28 +11,35 @@ import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
+from src.dist import all_reduce_mean, all_reduce_sum, is_distributed, is_main
 from src.losses import SegmentationLoss
 from src.metrics import RunningMetrics
 from src.utils import ensure_dir, save_csv, save_json
 
 
+def _unwrap(model: torch.nn.Module) -> torch.nn.Module:
+    return model.module if hasattr(model, "module") else model
+
+
 class EMA:
     def __init__(self, model: torch.nn.Module, decay: float) -> None:
         self.decay = decay
+        base = _unwrap(model)
         self.shadow = {
             name: tensor.detach().clone()
-            for name, tensor in model.state_dict().items()
+            for name, tensor in base.state_dict().items()
             if torch.is_floating_point(tensor)
         }
 
     def update(self, model: torch.nn.Module) -> None:
+        base = _unwrap(model)
         with torch.no_grad():
-            for name, tensor in model.state_dict().items():
+            for name, tensor in base.state_dict().items():
                 if name in self.shadow:
                     self.shadow[name].mul_(self.decay).add_(tensor.detach(), alpha=1.0 - self.decay)
 
     def copy_to(self, model: torch.nn.Module) -> None:
-        state = model.state_dict()
+        state = _unwrap(model).state_dict()
         for name, tensor in self.shadow.items():
             state[name].copy_(tensor)
 
@@ -96,7 +103,7 @@ def run_epoch(
     model.train(training)
     running_loss = 0.0
     metrics = RunningMetrics()
-    progress = tqdm(loader, leave=False)
+    progress = tqdm(loader, leave=False, disable=not is_main())
     if training:
         optimizer.zero_grad(set_to_none=True)
 
@@ -148,8 +155,14 @@ def run_epoch(
         if ema is not None:
             ema.update(model)
 
+    if is_distributed():
+        conf = torch.from_numpy(metrics.confusion).to(device)
+        all_reduce_sum(conf)
+        metrics.confusion = conf.cpu().numpy()
     summary = metrics.summary()
-    summary["loss"] = running_loss / max(1, len(loader))
+    loss_tensor = torch.tensor(running_loss / max(1, len(loader)), device=device)
+    all_reduce_mean(loss_tensor)
+    summary["loss"] = float(loss_tensor.item())
     return summary["loss"], summary
 
 
@@ -220,12 +233,15 @@ def fit(
     bad_epochs = 0
     total_start = time.perf_counter()
 
-    epoch_bar = tqdm(range(1, train_cfg["epochs"] + 1), desc="epochs", unit="ep")
+    epoch_bar = tqdm(range(1, train_cfg["epochs"] + 1), desc="epochs", unit="ep", disable=not is_main())
     for epoch in epoch_bar:
         epoch_start = time.perf_counter()
+        train_sampler = loaders["train"].sampler
+        if hasattr(train_sampler, "set_epoch"):
+            train_sampler.set_epoch(epoch)
         train_loss, train_summary = run_epoch(model, loaders["train"], criterion, optimizer, device, scaler, accum_steps, grad_clip, ema=ema)
         if ema is not None:
-            eval_model = deepcopy(model)
+            eval_model = deepcopy(_unwrap(model))
             ema.copy_to(eval_model)
             eval_model.to(device)
         else:
@@ -251,30 +267,32 @@ def fit(
         if current_metric > best_metric:
             best_metric = current_metric
             best_epoch = epoch
-            best_state = deepcopy(eval_model.state_dict())
-            torch.save(
-                {
-                    "epoch": epoch,
-                    "state_dict": best_state,
-                    "config": config,
-                    "val_summary": val_summary,
-                },
-                ckpt_dir / "best.pt",
-            )
+            if is_main():
+                best_state = deepcopy(_unwrap(eval_model).state_dict())
+                torch.save(
+                    {
+                        "epoch": epoch,
+                        "state_dict": best_state,
+                        "config": config,
+                        "val_summary": val_summary,
+                    },
+                    ckpt_dir / "best.pt",
+                )
         if current_metric > previous_best_metric + min_delta:
             bad_epochs = 0
         else:
             bad_epochs += 1
 
-        torch.save(
-            {
-                "epoch": epoch,
-                "state_dict": model.state_dict(),
-                "config": config,
-                "val_summary": val_summary,
-            },
-            ckpt_dir / "last.pt",
-        )
+        if is_main():
+            torch.save(
+                {
+                    "epoch": epoch,
+                    "state_dict": _unwrap(model).state_dict(),
+                    "config": config,
+                    "val_summary": val_summary,
+                },
+                ckpt_dir / "last.pt",
+            )
         if ema is not None:
             del eval_model
         epoch_bar.set_postfix(
@@ -288,8 +306,6 @@ def fit(
             break
     epoch_bar.close()
 
-    save_csv(log_dir / "history.csv", history)
-    save_history_plots(history, log_dir)
     summary = {
         "best_epoch": best_epoch,
         "best_val_mean_iou": best_metric,
@@ -297,5 +313,8 @@ def fit(
         "total_train_seconds": time.perf_counter() - total_start,
         "avg_epoch_seconds": float(np.mean([row["epoch_seconds"] for row in history])) if history else 0.0,
     }
-    save_json(log_dir / "summary.json", summary)
+    if is_main():
+        save_csv(log_dir / "history.csv", history)
+        save_history_plots(history, log_dir)
+        save_json(log_dir / "summary.json", summary)
     return ckpt_dir / "best.pt", history, summary
