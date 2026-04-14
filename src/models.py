@@ -109,10 +109,10 @@ class SemanticDecoder(nn.Module):
         super().__init__()
         self.decoder = nn.Sequential(
             nn.Conv2d(in_channels, 256, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(256),
+            nn.GroupNorm(32, 256),
             nn.ReLU(inplace=True),
             nn.Conv2d(256, 128, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(128),
+            nn.GroupNorm(32, 128),
             nn.ReLU(inplace=True),
             nn.Conv2d(128, num_classes, kernel_size=1),
         )
@@ -162,6 +162,7 @@ class SAM2SemanticSeg(nn.Module):
         dummy = torch.zeros(1, 3, 256, 256, device=device)
         with torch.no_grad():
             features = self._extract_features(self.backbone.forward_image(dummy))
+        print(f"[SAM2] selected feature map shape (deepest): {tuple(features.shape)}")
         self.decoder = SemanticDecoder(features.shape[1], num_classes=num_classes)
 
     def _verify_checkpoint_loaded(self, ckpt_path: Path) -> None:
@@ -197,13 +198,20 @@ class SAM2SemanticSeg(nn.Module):
                 return backbone_output
             raise ValueError("SAM2 backbone output tensor must be 4D.")
         if isinstance(backbone_output, dict):
-            candidates = [self._extract_features(value) for value in backbone_output.values() if value is not None]
+            for preferred_key in ("backbone_fpn", "vision_features"):
+                if preferred_key in backbone_output and backbone_output[preferred_key] is not None:
+                    return self._extract_features(backbone_output[preferred_key])
+            candidates = [
+                self._extract_features(value)
+                for key, value in backbone_output.items()
+                if value is not None and "pos" not in key.lower()
+            ]
             candidates = [item for item in candidates if isinstance(item, torch.Tensor)]
-            return max(candidates, key=lambda item: item.shape[1] * item.shape[2] * item.shape[3])
+            return min(candidates, key=lambda item: item.shape[2] * item.shape[3])
         if isinstance(backbone_output, (list, tuple)):
             candidates = [self._extract_features(value) for value in backbone_output if value is not None]
             candidates = [item for item in candidates if isinstance(item, torch.Tensor)]
-            return max(candidates, key=lambda item: item.shape[1] * item.shape[2] * item.shape[3])
+            return min(candidates, key=lambda item: item.shape[2] * item.shape[3])
         raise TypeError(f"Unsupported SAM2 feature container: {type(backbone_output)}")
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
