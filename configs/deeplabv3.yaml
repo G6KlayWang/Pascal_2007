@@ -7,7 +7,7 @@ experiment:
 dataset:
   root: data
   download: true
-  image_size: 384
+  image_size: 512
   num_workers: 2
   internal_val_ratio: 0.1
   split_seed: 42
@@ -15,7 +15,7 @@ model:
   type: deeplabv3
   pretrained: true
 train:
-  epochs: 60
+  epochs: 55
   batch_size: 6
   accum_steps: 1
   optimizer: adamw
@@ -24,7 +24,7 @@ train:
   weight_decay: 0.0001
   warmup_epochs: 3
   early_stopping_patience: 8
-  min_epochs_before_stopping: 60
+  min_epochs_before_stopping: 55
   early_stopping_min_delta: 0.0002
   amp: true
   grad_clip: 1.0

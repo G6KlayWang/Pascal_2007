@@ -246,7 +246,8 @@ def fit(
         }
         history.append(row)
         current_metric = val_summary["mean_iou"]
-        if current_metric > best_metric + min_delta:
+        previous_best_metric = best_metric
+        if current_metric > best_metric:
             best_metric = current_metric
             best_epoch = epoch
             best_state = deepcopy(eval_model.state_dict())
@@ -259,6 +260,7 @@ def fit(
                 },
                 ckpt_dir / "best.pt",
             )
+        if current_metric > previous_best_metric + min_delta:
             bad_epochs = 0
         else:
             bad_epochs += 1

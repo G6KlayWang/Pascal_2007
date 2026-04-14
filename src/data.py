@@ -145,6 +145,9 @@ class SegmentationTransform:
             if random.random() < 0.5:
                 image = F.hflip(image)
                 mask = F.hflip(mask)
+            if random.random() < 0.2:
+                image = F.vflip(image)
+                mask = F.vflip(mask)
             if random.random() < 0.8:
                 i, j, h, w = torch.randint(0, max(1, self.image_size // 8), (4,)).tolist()
                 crop_h = max(self.image_size - h, int(self.image_size * 0.8))
@@ -165,8 +168,34 @@ class SegmentationTransform:
                 angle = random.uniform(-10, 10)
                 image = F.rotate(image, angle, interpolation=F.InterpolationMode.BILINEAR, fill=0)
                 mask = F.rotate(mask, angle, interpolation=F.InterpolationMode.NEAREST, fill=IGNORE_INDEX)
+            if random.random() < 0.35:
+                translate = (
+                    int(random.uniform(-0.05, 0.05) * self.image_size),
+                    int(random.uniform(-0.05, 0.05) * self.image_size),
+                )
+                scale = random.uniform(0.95, 1.05)
+                image = F.affine(
+                    image,
+                    angle=0.0,
+                    translate=translate,
+                    scale=scale,
+                    shear=0.0,
+                    interpolation=F.InterpolationMode.BILINEAR,
+                    fill=0,
+                )
+                mask = F.affine(
+                    mask,
+                    angle=0.0,
+                    translate=translate,
+                    scale=scale,
+                    shear=0.0,
+                    interpolation=F.InterpolationMode.NEAREST,
+                    fill=IGNORE_INDEX,
+                )
             if random.random() < 0.8:
                 image = self.color_jitter(image)
+            if random.random() < 0.2:
+                image = F.gaussian_blur(image, kernel_size=3)
 
         image_tensor = F.to_tensor(image)
         image_tensor = F.normalize(image_tensor, mean=IMAGENET_MEAN, std=IMAGENET_STD)
