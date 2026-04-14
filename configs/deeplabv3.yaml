@@ -15,7 +15,7 @@ model:
   type: deeplabv3
   pretrained: true
 train:
-  epochs: 40
+  epochs: 60
   batch_size: 6
   accum_steps: 1
   optimizer: adamw
@@ -24,6 +24,8 @@ train:
   weight_decay: 0.0001
   warmup_epochs: 3
   early_stopping_patience: 8
+  min_epochs_before_stopping: 60
+  early_stopping_min_delta: 0.0002
   amp: true
   grad_clip: 1.0
   use_ema: true

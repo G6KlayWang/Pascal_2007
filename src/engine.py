@@ -208,7 +208,7 @@ def fit(
     accum_steps = int(train_cfg.get("accum_steps", 1))
     grad_clip = float(train_cfg.get("grad_clip", 0.0))
     patience = int(train_cfg.get("early_stopping_patience", 10))
-    min_epochs_before_stopping = int(train_cfg.get("min_epochs_before_stopping", 0))
+    min_epochs_before_stopping = int(train_cfg.get("min_epochs_before_stopping", train_cfg["epochs"]))
     min_delta = float(train_cfg.get("early_stopping_min_delta", 0.0))
     use_ema = bool(train_cfg.get("use_ema", False))
     ema = EMA(model, train_cfg.get("ema_decay", 0.999)) if use_ema else None
