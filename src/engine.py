@@ -226,7 +226,8 @@ def fit(
     bad_epochs = 0
     total_start = time.perf_counter()
 
-    for epoch in range(1, train_cfg["epochs"] + 1):
+    epoch_bar = tqdm(range(1, train_cfg["epochs"] + 1), desc="epochs", unit="ep")
+    for epoch in epoch_bar:
         epoch_start = time.perf_counter()
         train_loss, train_summary = run_epoch(model, loaders["train"], criterion, optimizer, device, scaler, accum_steps, grad_clip, ema=ema)
         if ema is not None:
@@ -282,8 +283,16 @@ def fit(
         )
         if ema is not None:
             del eval_model
+        epoch_bar.set_postfix(
+            train_loss=f"{train_loss:.3f}",
+            val_loss=f"{val_summary['loss']:.3f}",
+            val_miou=f"{current_metric:.3f}",
+            best_miou=f"{best_metric:.3f}",
+            best_ep=best_epoch,
+        )
         if epoch >= min_epochs_before_stopping and bad_epochs >= patience:
             break
+    epoch_bar.close()
 
     save_csv(log_dir / "history.csv", history)
     save_history_plots(history, log_dir)
