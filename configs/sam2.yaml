@@ -17,6 +17,7 @@ model:
   sam2_checkpoint: ./checkpoints/sam2.1_hiera_large.pt
   freeze_backbone: true
   unfreeze_patterns:
+    - image_encoder.trunk.blocks.9
     - image_encoder.trunk.blocks.10
     - image_encoder.trunk.blocks.11
     - image_encoder.trunk.neck
