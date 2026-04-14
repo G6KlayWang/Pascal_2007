@@ -16,23 +16,29 @@ from src.metrics import RunningMetrics
 from src.utils import ensure_dir, save_csv, save_json
 
 
+def _unwrap(model: torch.nn.Module) -> torch.nn.Module:
+    return model.module if hasattr(model, "module") else model
+
+
 class EMA:
     def __init__(self, model: torch.nn.Module, decay: float) -> None:
         self.decay = decay
+        base = _unwrap(model)
         self.shadow = {
             name: tensor.detach().clone()
-            for name, tensor in model.state_dict().items()
+            for name, tensor in base.state_dict().items()
             if torch.is_floating_point(tensor)
         }
 
     def update(self, model: torch.nn.Module) -> None:
+        base = _unwrap(model)
         with torch.no_grad():
-            for name, tensor in model.state_dict().items():
+            for name, tensor in base.state_dict().items():
                 if name in self.shadow:
                     self.shadow[name].mul_(self.decay).add_(tensor.detach(), alpha=1.0 - self.decay)
 
     def copy_to(self, model: torch.nn.Module) -> None:
-        state = model.state_dict()
+        state = _unwrap(model).state_dict()
         for name, tensor in self.shadow.items():
             state[name].copy_(tensor)
 
@@ -224,7 +230,7 @@ def fit(
         epoch_start = time.perf_counter()
         train_loss, train_summary = run_epoch(model, loaders["train"], criterion, optimizer, device, scaler, accum_steps, grad_clip, ema=ema)
         if ema is not None:
-            eval_model = deepcopy(model)
+            eval_model = deepcopy(_unwrap(model))
             ema.copy_to(eval_model)
             eval_model.to(device)
         else:
@@ -250,7 +256,7 @@ def fit(
         if current_metric > best_metric:
             best_metric = current_metric
             best_epoch = epoch
-            best_state = deepcopy(eval_model.state_dict())
+            best_state = deepcopy(_unwrap(eval_model).state_dict())
             torch.save(
                 {
                     "epoch": epoch,
@@ -268,7 +274,7 @@ def fit(
         torch.save(
             {
                 "epoch": epoch,
-                "state_dict": model.state_dict(),
+                "state_dict": _unwrap(model).state_dict(),
                 "config": config,
                 "val_summary": val_summary,
             },

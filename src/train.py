@@ -28,6 +28,10 @@ def main() -> None:
     device = device_from_config(config["experiment"].get("device"))
     loaders, voc_root, split_manifest = build_dataloaders(config)
     model = build_model(config, device)
+    gpu_count = torch.cuda.device_count() if device.type == "cuda" else 0
+    if gpu_count > 1:
+        print(f"[train] wrapping model with DataParallel across {gpu_count} GPUs: {list(range(gpu_count))}")
+        model = torch.nn.DataParallel(model)
     class_weights = None
     if config["loss"].get("use_class_weights", False):
         class_weights = compute_class_weights(

@@ -18,8 +18,8 @@ model:
   freeze_backbone: true
 train:
   epochs: 55
-  batch_size: 1
-  accum_steps: 8
+  batch_size: 8
+  accum_steps: 1
   optimizer: adamw
   lr: 0.0005
   backbone_lr: 0.0005
