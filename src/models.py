@@ -141,6 +141,10 @@ class SAM2SemanticSeg(nn.Module):
                 "SAM2 is not installed. Install dependencies from requirements.txt and download the SAM2 checkpoint."
             ) from exc
 
+        ckpt_path = Path(sam2_checkpoint)
+        if not ckpt_path.exists():
+            raise FileNotFoundError(f"SAM2 checkpoint not found: {ckpt_path.resolve()}")
+
         config_path = Path(sam2_config)
         if config_path.exists():
             GlobalHydra.instance().clear()
@@ -149,6 +153,8 @@ class SAM2SemanticSeg(nn.Module):
             GlobalHydra.instance().clear()
         else:
             self.backbone = build_sam2(sam2_config, sam2_checkpoint, device=device)
+
+        self._verify_checkpoint_loaded(ckpt_path)
         if freeze_backbone:
             for param in self.backbone.parameters():
                 param.requires_grad = False
@@ -157,6 +163,33 @@ class SAM2SemanticSeg(nn.Module):
         with torch.no_grad():
             features = self._extract_features(self.backbone.forward_image(dummy))
         self.decoder = SemanticDecoder(features.shape[1], num_classes=num_classes)
+
+    def _verify_checkpoint_loaded(self, ckpt_path: Path) -> None:
+        ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=True)
+        ckpt_state = ckpt.get("model", ckpt) if isinstance(ckpt, dict) else ckpt
+        model_state = self.backbone.state_dict()
+        matched, mismatched, missing = 0, [], []
+        for key, ckpt_tensor in ckpt_state.items():
+            if key not in model_state:
+                missing.append(key)
+                continue
+            model_tensor = model_state[key]
+            if model_tensor.shape != ckpt_tensor.shape:
+                mismatched.append((key, tuple(model_tensor.shape), tuple(ckpt_tensor.shape)))
+                continue
+            if torch.allclose(model_tensor.float().cpu(), ckpt_tensor.float().cpu(), atol=1e-6):
+                matched += 1
+            else:
+                mismatched.append((key, "value mismatch", None))
+        total_ckpt = len(ckpt_state)
+        print(
+            f"[SAM2] checkpoint load check: matched {matched}/{total_ckpt} tensors "
+            f"(missing={len(missing)}, mismatched={len(mismatched)})"
+        )
+        if mismatched[:3]:
+            print(f"[SAM2] first mismatches: {mismatched[:3]}")
+        if missing[:3]:
+            print(f"[SAM2] first missing (ckpt→model): {missing[:3]}")
 
     def _extract_features(self, backbone_output: Any) -> torch.Tensor:
         if isinstance(backbone_output, torch.Tensor):
