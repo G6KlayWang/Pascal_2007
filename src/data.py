@@ -107,23 +107,18 @@ def build_internal_split(
     voc_root = Path(voc_root)
     output_dir = ensure_dir(output_dir)
     manifest_path = output_dir / "splits.json"
-    if manifest_path.exists():
-        with manifest_path.open("r", encoding="utf-8") as handle:
-            return json.load(handle)
-
-    train_ids = get_split_ids(voc_root, "train")
-    test_ids = get_split_ids(voc_root, "val")
-    rng = random.Random(seed)
-    shuffled = train_ids[:]
-    rng.shuffle(shuffled)
-    val_count = max(1, int(len(shuffled) * val_ratio))
-    internal_val_ids = sorted(shuffled[:val_count])
-    internal_train_ids = sorted(shuffled[val_count:])
+    train_ids = sorted(get_split_ids(voc_root, "train"))
+    test_ids = sorted(get_split_ids(voc_root, "val"))
     manifest = {
-        "train": internal_train_ids,
-        "val_internal": internal_val_ids,
+        "train": train_ids,
+        "val_internal": test_ids,
         "test": test_ids,
     }
+    if manifest_path.exists():
+        with manifest_path.open("r", encoding="utf-8") as handle:
+            existing = json.load(handle)
+        if existing == manifest:
+            return existing
     save_json(manifest_path, manifest)
     return manifest
 
@@ -148,22 +143,6 @@ class SegmentationTransform:
             if random.random() < 0.2:
                 image = F.vflip(image)
                 mask = F.vflip(mask)
-            if random.random() < 0.8:
-                i, j, h, w = torch.randint(0, max(1, self.image_size // 8), (4,)).tolist()
-                crop_h = max(self.image_size - h, int(self.image_size * 0.8))
-                crop_w = max(self.image_size - w, int(self.image_size * 0.8))
-                i = min(i, self.image_size - crop_h)
-                j = min(j, self.image_size - crop_w)
-                image = F.resized_crop(image, i, j, crop_h, crop_w, [self.image_size, self.image_size], antialias=True)
-                mask = F.resized_crop(
-                    mask,
-                    i,
-                    j,
-                    crop_h,
-                    crop_w,
-                    [self.image_size, self.image_size],
-                    interpolation=Image.NEAREST,
-                )
             if random.random() < 0.3:
                 angle = random.uniform(-10, 10)
                 image = F.rotate(image, angle, interpolation=F.InterpolationMode.BILINEAR, fill=0)

@@ -8,5 +8,6 @@ outputs/
 .codex_tmp/
 data/
 checkpoints/
+sample/
 
 .DS_Store

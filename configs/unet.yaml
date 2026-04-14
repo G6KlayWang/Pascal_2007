@@ -17,11 +17,11 @@ model:
   pretrained: true
 train:
   epochs: 55
-  batch_size: 4
-  accum_steps: 2
+  batch_size: 8
+  accum_steps: 1
   optimizer: adamw
   lr: 0.0005
-  backbone_lr: 0.0001
+  backbone_lr: 0.0005
   weight_decay: 0.0001
   warmup_epochs: 5
   early_stopping_patience: 15
@@ -32,12 +32,8 @@ train:
   use_ema: true
   ema_decay: 0.999
 loss:
-  name: ce_dice
-  ce_weight: 2.0
-  dice_weight: 1.0
-  use_class_weights: true
-  class_weight_power: 0.5
-  class_weight_clip_max: 8.0
+  name: ce
+  use_class_weights: false
 augmentation:
   enabled: true
 eval:
