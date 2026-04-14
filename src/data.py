@@ -230,10 +230,16 @@ def build_dataloaders(config: dict[str, Any]) -> tuple[dict[str, DataLoader], Pa
     val_ds = PascalVOCDataset(voc_root, split_manifest["val_internal"], image_size=image_size, augment=False)
     test_ds = PascalVOCDataset(voc_root, split_manifest["test"], image_size=image_size, augment=False)
 
+    loader_kwargs = {
+        "num_workers": num_workers,
+        "pin_memory": True,
+        "persistent_workers": num_workers > 0,
+        "prefetch_factor": 4 if num_workers > 0 else None,
+    }
     loaders = {
-        "train": DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True, drop_last=True),
-        "val_internal": DataLoader(val_ds, batch_size=eval_batch_size, shuffle=False, num_workers=num_workers, pin_memory=True),
-        "test": DataLoader(test_ds, batch_size=eval_batch_size, shuffle=False, num_workers=num_workers, pin_memory=True),
+        "train": DataLoader(train_ds, batch_size=batch_size, shuffle=True, drop_last=True, **loader_kwargs),
+        "val_internal": DataLoader(val_ds, batch_size=eval_batch_size, shuffle=False, **loader_kwargs),
+        "test": DataLoader(test_ds, batch_size=eval_batch_size, shuffle=False, **loader_kwargs),
     }
     return loaders, voc_root, split_manifest
 
