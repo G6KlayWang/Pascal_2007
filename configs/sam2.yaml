@@ -16,24 +16,30 @@ model:
   sam2_config: ./sam2_configs/sam2.1_hiera_l.yaml
   sam2_checkpoint: ./checkpoints/sam2.1_hiera_large.pt
   freeze_backbone: true
+  unfreeze_patterns:
+    - image_encoder.trunk.blocks.10
+    - image_encoder.trunk.blocks.11
+    - image_encoder.trunk.neck
 train:
-  epochs: 55
+  epochs: 80
   batch_size: 8
   accum_steps: 1
   optimizer: adamw
-  lr: 0.0005
-  backbone_lr: 0.0005
+  decoder_lr: 0.0005
+  backbone_lr: 0.00005
   weight_decay: 0.0001
   warmup_epochs: 5
-  early_stopping_patience: 15
-  min_epochs_before_stopping: 55
+  early_stopping_patience: 25
+  min_epochs_before_stopping: 50
   early_stopping_min_delta: 0.0002
   amp: true
   grad_clip: 1.0
   use_ema: true
   ema_decay: 0.999
 loss:
-  name: ce
+  name: ce_dice
+  ce_weight: 1.0
+  dice_weight: 1.0
   use_class_weights: false
 augmentation:
   enabled: true

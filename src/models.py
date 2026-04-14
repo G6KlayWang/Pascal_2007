@@ -147,6 +147,7 @@ class SAM2SemanticSeg(nn.Module):
         sam2_checkpoint: str,
         num_classes: int = NUM_CLASSES,
         freeze_backbone: bool = True,
+        unfreeze_patterns: list[str] | None = None,
         device: str = "cpu",
     ) -> None:
         super().__init__()
@@ -173,9 +174,10 @@ class SAM2SemanticSeg(nn.Module):
             self.backbone = build_sam2(sam2_config, sam2_checkpoint, device=device)
 
         self._verify_checkpoint_loaded(ckpt_path)
-        if freeze_backbone:
-            for param in self.backbone.parameters():
-                param.requires_grad = False
+        self._configure_backbone_training(
+            freeze_backbone=freeze_backbone,
+            unfreeze_patterns=unfreeze_patterns or [],
+        )
 
         dummy = torch.zeros(1, 3, 1024, 1024, device=device)
         with torch.no_grad():
@@ -184,6 +186,27 @@ class SAM2SemanticSeg(nn.Module):
             print(f"[SAM2] pyramid level {idx} shape: {tuple(feat.shape)}")
         in_channels_list = [feat.shape[1] for feat in pyramid]
         self.decoder = FPNUNetDecoder(in_channels_list, num_classes=num_classes)
+
+    def _configure_backbone_training(self, freeze_backbone: bool, unfreeze_patterns: list[str]) -> None:
+        if not freeze_backbone:
+            return
+
+        for param in self.backbone.parameters():
+            param.requires_grad = False
+
+        if not unfreeze_patterns:
+            return
+
+        matched = set()
+        for name, param in self.backbone.named_parameters():
+            if any(name.startswith(pattern) for pattern in unfreeze_patterns):
+                param.requires_grad = True
+                matched.add(name.split(".", 1)[0])
+
+        if matched:
+            print(f"[SAM2] partially unfroze backbone parameters matching: {unfreeze_patterns}")
+        else:
+            print(f"[SAM2] no backbone parameters matched unfreeze_patterns={unfreeze_patterns}")
 
     def _verify_checkpoint_loaded(self, ckpt_path: Path) -> None:
         ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=True)
@@ -265,6 +288,7 @@ def build_model(config: dict[str, Any], device: torch.device) -> nn.Module:
             sam2_config=model_cfg["sam2_config"],
             sam2_checkpoint=model_cfg["sam2_checkpoint"],
             freeze_backbone=model_cfg.get("freeze_backbone", True),
+            unfreeze_patterns=model_cfg.get("unfreeze_patterns", []),
             device=str(device),
         ).to(device)
     raise ValueError(f"Unknown model type: {model_type}")

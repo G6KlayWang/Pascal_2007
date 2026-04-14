@@ -16,7 +16,7 @@ model:
   encoder: resnet50
   pretrained: true
 train:
-  epochs: 55
+  epochs: 80
   batch_size: 8
   accum_steps: 1
   optimizer: adamw
@@ -25,7 +25,7 @@ train:
   weight_decay: 0.0001
   warmup_epochs: 5
   early_stopping_patience: 15
-  min_epochs_before_stopping: 55
+  min_epochs_before_stopping: 50
   early_stopping_min_delta: 0.0005
   amp: true
   grad_clip: 1.0

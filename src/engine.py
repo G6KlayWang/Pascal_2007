@@ -46,8 +46,8 @@ class EMA:
 
 def create_optimizer(model: torch.nn.Module, config: dict[str, Any]) -> torch.optim.Optimizer:
     train_cfg = config["train"]
-    backbone_lr = train_cfg.get("backbone_lr", train_cfg["lr"])
-    head_lr = train_cfg["lr"]
+    decoder_lr = train_cfg.get("decoder_lr", train_cfg.get("lr", 1e-3))
+    backbone_lr = train_cfg.get("backbone_lr", decoder_lr)
     backbone_params = []
     head_params = []
     for name, param in model.named_parameters():
@@ -61,13 +61,13 @@ def create_optimizer(model: torch.nn.Module, config: dict[str, Any]) -> torch.op
     if backbone_params:
         param_groups.append({"params": backbone_params, "lr": backbone_lr})
     if head_params:
-        param_groups.append({"params": head_params, "lr": head_lr})
+        param_groups.append({"params": head_params, "lr": decoder_lr})
 
     optimizer_name = train_cfg.get("optimizer", "adamw").lower()
     if optimizer_name == "adamw":
-        return torch.optim.AdamW(param_groups, lr=head_lr, weight_decay=train_cfg["weight_decay"])
+        return torch.optim.AdamW(param_groups, lr=decoder_lr, weight_decay=train_cfg["weight_decay"])
     if optimizer_name == "sgd":
-        return torch.optim.SGD(param_groups, lr=head_lr, weight_decay=train_cfg["weight_decay"], momentum=0.9, nesterov=True)
+        return torch.optim.SGD(param_groups, lr=decoder_lr, weight_decay=train_cfg["weight_decay"], momentum=0.9, nesterov=True)
     raise ValueError(f"Unsupported optimizer: {optimizer_name}")
 
 
