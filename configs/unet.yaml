@@ -7,7 +7,7 @@ experiment:
 dataset:
   root: data
   download: true
-  image_size: 512
+  image_size: 1024
   num_workers: 2
   internal_val_ratio: 0.1
   split_seed: 42

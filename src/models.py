@@ -104,21 +104,39 @@ class DeepLabWrapper(nn.Module):
         return self.model(x)["out"]
 
 
-class SemanticDecoder(nn.Module):
-    def __init__(self, in_channels: int, num_classes: int) -> None:
+class FPNUNetDecoder(nn.Module):
+    def __init__(self, in_channels_list: list[int], num_classes: int, fpn_channels: int = 256) -> None:
         super().__init__()
-        self.decoder = nn.Sequential(
-            nn.Conv2d(in_channels, 256, kernel_size=3, padding=1, bias=False),
-            nn.GroupNorm(32, 256),
+        self.lateral = nn.ModuleList(
+            [nn.Conv2d(ch, fpn_channels, kernel_size=1, bias=False) for ch in in_channels_list]
+        )
+        self.fuse = nn.ModuleList(
+            [
+                nn.Sequential(
+                    nn.Conv2d(fpn_channels, fpn_channels, kernel_size=3, padding=1, bias=False),
+                    nn.GroupNorm(32, fpn_channels),
+                    nn.ReLU(inplace=True),
+                )
+                for _ in in_channels_list
+            ]
+        )
+        self.head = nn.Sequential(
+            nn.Conv2d(fpn_channels, fpn_channels, kernel_size=3, padding=1, bias=False),
+            nn.GroupNorm(32, fpn_channels),
             nn.ReLU(inplace=True),
-            nn.Conv2d(256, 128, kernel_size=3, padding=1, bias=False),
-            nn.GroupNorm(32, 128),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(128, num_classes, kernel_size=1),
+            nn.Conv2d(fpn_channels, num_classes, kernel_size=1),
         )
 
-    def forward(self, x: torch.Tensor, output_size: tuple[int, int]) -> torch.Tensor:
-        x = self.decoder(x)
+    def forward(self, features: list[torch.Tensor], output_size: tuple[int, int]) -> torch.Tensor:
+        laterals = [lat(feat) for lat, feat in zip(self.lateral, features)]
+        x = laterals[-1]
+        x = self.fuse[-1](x)
+        for idx in range(len(laterals) - 2, -1, -1):
+            skip = laterals[idx]
+            x = F.interpolate(x, size=skip.shape[-2:], mode="bilinear", align_corners=False)
+            x = x + skip
+            x = self.fuse[idx](x)
+        x = self.head(x)
         return F.interpolate(x, size=output_size, mode="bilinear", align_corners=False)
 
 
@@ -159,11 +177,13 @@ class SAM2SemanticSeg(nn.Module):
             for param in self.backbone.parameters():
                 param.requires_grad = False
 
-        dummy = torch.zeros(1, 3, 256, 256, device=device)
+        dummy = torch.zeros(1, 3, 1024, 1024, device=device)
         with torch.no_grad():
-            features = self._extract_features(self.backbone.forward_image(dummy))
-        print(f"[SAM2] selected feature map shape (deepest): {tuple(features.shape)}")
-        self.decoder = SemanticDecoder(features.shape[1], num_classes=num_classes)
+            pyramid = self._extract_pyramid(self.backbone.forward_image(dummy))
+        for idx, feat in enumerate(pyramid):
+            print(f"[SAM2] pyramid level {idx} shape: {tuple(feat.shape)}")
+        in_channels_list = [feat.shape[1] for feat in pyramid]
+        self.decoder = FPNUNetDecoder(in_channels_list, num_classes=num_classes)
 
     def _verify_checkpoint_loaded(self, ckpt_path: Path) -> None:
         ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=True)
@@ -192,6 +212,20 @@ class SAM2SemanticSeg(nn.Module):
         if missing[:3]:
             print(f"[SAM2] first missing (ckpt→model): {missing[:3]}")
 
+    def _extract_pyramid(self, backbone_output: Any) -> list[torch.Tensor]:
+        if isinstance(backbone_output, dict):
+            for preferred_key in ("backbone_fpn", "vision_features"):
+                if preferred_key in backbone_output and backbone_output[preferred_key] is not None:
+                    value = backbone_output[preferred_key]
+                    if isinstance(value, (list, tuple)):
+                        tensors = [item for item in value if isinstance(item, torch.Tensor) and item.ndim == 4]
+                        if tensors:
+                            return sorted(tensors, key=lambda t: -t.shape[2] * t.shape[3])
+                    if isinstance(value, torch.Tensor) and value.ndim == 4:
+                        return [value]
+        feat = self._extract_features(backbone_output)
+        return [feat]
+
     def _extract_features(self, backbone_output: Any) -> torch.Tensor:
         if isinstance(backbone_output, torch.Tensor):
             if backbone_output.ndim == 4:
@@ -215,8 +249,8 @@ class SAM2SemanticSeg(nn.Module):
         raise TypeError(f"Unsupported SAM2 feature container: {type(backbone_output)}")
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        features = self._extract_features(self.backbone.forward_image(x))
-        return self.decoder(features, output_size=x.shape[-2:])
+        pyramid = self._extract_pyramid(self.backbone.forward_image(x))
+        return self.decoder(pyramid, output_size=x.shape[-2:])
 
 
 def build_model(config: dict[str, Any], device: torch.device) -> nn.Module:
