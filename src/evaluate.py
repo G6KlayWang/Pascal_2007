@@ -11,8 +11,8 @@ import torch
 from src.config import apply_overrides, load_config
 from src.constants import VOC_CLASSES
 from src.data import build_dataloaders, compute_class_weights
-from src.engine import evaluate_loader
 from src.losses import SegmentationLoss
+from src.metrics import RunningMetrics
 from src.models import build_model
 from src.utils import device_from_config, ensure_dir, save_csv, save_json, seed_everything
 
@@ -34,14 +34,44 @@ def save_confusion_matrix(confusion: list[list[int]], path: Path) -> None:
     plt.close(fig)
 
 
+def predict_with_tta(model: torch.nn.Module, images: torch.Tensor) -> torch.Tensor:
+    logits = model(images)
+    flipped_images = torch.flip(images, dims=[3])
+    flipped_logits = model(flipped_images)
+    flipped_logits = torch.flip(flipped_logits, dims=[3])
+    return 0.5 * (logits + flipped_logits)
+
+
+def evaluate_with_tta(
+    model: torch.nn.Module,
+    loader,
+    criterion: SegmentationLoss,
+    device: torch.device,
+) -> dict:
+    model.eval()
+    running_loss = 0.0
+    metrics = RunningMetrics()
+    with torch.inference_mode():
+        for batch in loader:
+            images = batch["image"].to(device, non_blocking=True)
+            masks = batch["mask"].to(device, non_blocking=True)
+            logits = predict_with_tta(model, images)
+            running_loss += criterion(logits, masks).item()
+            metrics.update(logits, masks)
+
+    summary = metrics.summary()
+    summary["loss"] = running_loss / max(1, len(loader))
+    return summary
+
+
 def save_qualitative_examples(model: torch.nn.Module, loader, device: torch.device, output_dir: Path, class_id: int) -> None:
     per_sample = []
     model.eval()
-    with torch.no_grad():
+    with torch.inference_mode():
         for batch in loader:
             images = batch["image"].to(device)
             masks = batch["mask"].to(device)
-            logits = model(images)
+            logits = predict_with_tta(model, images)
             preds = torch.argmax(logits, dim=1)
             for idx in range(images.shape[0]):
                 pred_mask = preds[idx] == class_id
@@ -83,10 +113,10 @@ def save_random_mosaic(model: torch.nn.Module, loader, device: torch.device, out
     samples = []
     sample_cap = max_samples * max(1, loader.batch_size or 1)
     model.eval()
-    with torch.no_grad():
+    with torch.inference_mode():
         for batch in loader:
             images = batch["image"].to(device)
-            logits = model(images)
+            logits = predict_with_tta(model, images)
             preds = torch.argmax(logits, dim=1)
             for idx in range(images.shape[0]):
                 samples.append(
@@ -143,7 +173,7 @@ def main() -> None:
 
     run_name = checkpoint["config"]["experiment"].get("run_name", Path(args.checkpoint).parent.parent.name)
     output_dir = ensure_dir(Path(config["experiment"]["output_root"]) / "eval" / config["model"]["type"] / run_name)
-    summary = evaluate_loader(model, loaders["test"], criterion, device)
+    summary = evaluate_with_tta(model, loaders["test"], criterion, device)
     save_json(output_dir / "metrics.json", summary)
     save_csv(output_dir / "per_class_metrics.csv", summary["per_class"])
     save_confusion_matrix(summary["confusion_matrix"], output_dir / "confusion_matrix.png")
