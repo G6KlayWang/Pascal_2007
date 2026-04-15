@@ -212,6 +212,7 @@ def fit(
 ) -> tuple[Path, list[dict[str, Any]], dict[str, Any]]:
     run_dir = ensure_dir(run_dir)
     ckpt_dir = ensure_dir(run_dir / "checkpoints")
+    best_ckpt_path = ckpt_dir / "best.pt"
     log_dir = ensure_dir(run_dir / "logs")
     optimizer = create_optimizer(model, config)
     scheduler = create_scheduler(optimizer, config)
@@ -233,6 +234,14 @@ def fit(
     best_state = None
     bad_epochs = 0
     total_start = time.perf_counter()
+
+    if best_ckpt_path.exists():
+        existing_best = torch.load(best_ckpt_path, map_location="cpu")
+        existing_summary = existing_best.get("val_summary", {})
+        existing_metric = existing_summary.get("mean_iou")
+        if existing_metric is not None:
+            best_metric = float(existing_metric)
+            best_epoch = int(existing_best.get("epoch", -1))
 
     epoch_bar = tqdm(range(1, train_cfg["epochs"] + 1), desc="epochs", unit="ep", disable=not is_main())
     for epoch in epoch_bar:
@@ -282,7 +291,7 @@ def fit(
                             "config": config,
                             "val_summary": val_summary,
                         },
-                        ckpt_dir / "best.pt",
+                        best_ckpt_path,
                     )
             if current_metric > previous_best_metric + min_delta:
                 bad_epochs = 0
@@ -325,4 +334,4 @@ def fit(
         save_csv(log_dir / "history.csv", history)
         save_history_plots(history, log_dir)
         save_json(log_dir / "summary.json", summary)
-    return ckpt_dir / "best.pt", history, summary
+    return best_ckpt_path, history, summary

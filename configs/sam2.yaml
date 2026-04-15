@@ -45,6 +45,6 @@ loss:
 augmentation:
   enabled: true
 eval:
-  interval: 10
+  interval: 1
   batch_size: 2
   best_worst_class: person
