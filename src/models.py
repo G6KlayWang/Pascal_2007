@@ -186,7 +186,6 @@ class FPNUNetDecoder(nn.Module):
             nn.Conv2d(fpn_channels, fpn_channels, kernel_size=3, padding=1, bias=False),
             nn.GroupNorm(32, fpn_channels),
             nn.ReLU(inplace=True),
-            nn.Dropout2d(p=dropout_p),
             nn.Conv2d(fpn_channels, num_classes, kernel_size=1),
         )
 
