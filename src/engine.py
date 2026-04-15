@@ -224,6 +224,7 @@ def fit(
     min_epochs_before_stopping = int(train_cfg.get("min_epochs_before_stopping", train_cfg["epochs"]))
     min_delta = float(train_cfg.get("early_stopping_min_delta", 0.0))
     use_ema = bool(train_cfg.get("use_ema", False))
+    val_interval = int(config.get("eval", {}).get("interval", 1))
     ema = EMA(model, train_cfg.get("ema_decay", 0.999)) if use_ema else None
 
     history = []
@@ -240,14 +241,19 @@ def fit(
         if hasattr(train_sampler, "set_epoch"):
             train_sampler.set_epoch(epoch)
         train_loss, train_summary = run_epoch(model, loaders["train"], criterion, optimizer, device, scaler, accum_steps, grad_clip, ema=ema)
-        if ema is not None:
-            eval_model = deepcopy(_unwrap(model))
-            ema.copy_to(eval_model)
-            eval_model.to(device)
-        else:
-            eval_model = model
-        val_summary = evaluate_loader(eval_model, loaders["val_internal"], criterion, device)
         scheduler.step()
+        should_validate = (epoch % val_interval == 0) or (epoch == train_cfg["epochs"])
+        val_summary = None
+        current_metric = None
+        if should_validate:
+            if ema is not None:
+                eval_model = deepcopy(_unwrap(model))
+                ema.copy_to(eval_model)
+                eval_model.to(device)
+            else:
+                eval_model = model
+            val_summary = evaluate_loader(eval_model, loaders["val_internal"], criterion, device)
+            current_metric = val_summary["mean_iou"]
 
         row = {
             "epoch": epoch,
@@ -255,33 +261,33 @@ def fit(
             "train_loss": train_loss,
             "train_mean_iou": train_summary["mean_iou"],
             "train_mean_dice": train_summary["mean_dice"],
-            "val_loss": val_summary["loss"],
-            "val_mean_iou": val_summary["mean_iou"],
-            "val_mean_dice": val_summary["mean_dice"],
-            "val_pixel_accuracy": val_summary["pixel_accuracy"],
+            "val_loss": val_summary["loss"] if val_summary is not None else None,
+            "val_mean_iou": val_summary["mean_iou"] if val_summary is not None else None,
+            "val_mean_dice": val_summary["mean_dice"] if val_summary is not None else None,
+            "val_pixel_accuracy": val_summary["pixel_accuracy"] if val_summary is not None else None,
             "lr": optimizer.param_groups[-1]["lr"],
         }
         history.append(row)
-        current_metric = val_summary["mean_iou"]
-        previous_best_metric = best_metric
-        if current_metric > best_metric:
-            best_metric = current_metric
-            best_epoch = epoch
-            if is_main():
-                best_state = deepcopy(_unwrap(eval_model).state_dict())
-                torch.save(
-                    {
-                        "epoch": epoch,
-                        "state_dict": best_state,
-                        "config": config,
-                        "val_summary": val_summary,
-                    },
-                    ckpt_dir / "best.pt",
-                )
-        if current_metric > previous_best_metric + min_delta:
-            bad_epochs = 0
-        else:
-            bad_epochs += 1
+        if should_validate:
+            previous_best_metric = best_metric
+            if current_metric > best_metric:
+                best_metric = current_metric
+                best_epoch = epoch
+                if is_main():
+                    best_state = deepcopy(_unwrap(eval_model).state_dict())
+                    torch.save(
+                        {
+                            "epoch": epoch,
+                            "state_dict": best_state,
+                            "config": config,
+                            "val_summary": val_summary,
+                        },
+                        ckpt_dir / "best.pt",
+                    )
+            if current_metric > previous_best_metric + min_delta:
+                bad_epochs = 0
+            else:
+                bad_epochs += 1
 
         if is_main():
             torch.save(
@@ -293,16 +299,18 @@ def fit(
                 },
                 ckpt_dir / "last.pt",
             )
-        if ema is not None:
+        if should_validate and ema is not None:
             del eval_model
-        epoch_bar.set_postfix(
-            train_loss=f"{train_loss:.3f}",
-            val_loss=f"{val_summary['loss']:.3f}",
-            val_miou=f"{current_metric:.3f}",
-            best_miou=f"{best_metric:.3f}",
-            best_ep=best_epoch,
-        )
-        if epoch >= min_epochs_before_stopping and bad_epochs >= patience:
+        postfix = {
+            "train_loss": f"{train_loss:.3f}",
+            "best_miou": f"{best_metric:.3f}" if best_epoch >= 0 else "n/a",
+            "best_ep": best_epoch if best_epoch >= 0 else "n/a",
+        }
+        if should_validate and val_summary is not None and current_metric is not None:
+            postfix["val_loss"] = f"{val_summary['loss']:.3f}"
+            postfix["val_miou"] = f"{current_metric:.3f}"
+        epoch_bar.set_postfix(**postfix)
+        if should_validate and epoch >= min_epochs_before_stopping and bad_epochs >= patience:
             break
     epoch_bar.close()
 

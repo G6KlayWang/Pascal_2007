@@ -110,7 +110,7 @@ class FPNUNetDecoder(nn.Module):
         in_channels_list: list[int],
         num_classes: int,
         fpn_channels: int = 256,
-        dropout_p: float = 0.1,
+        dropout_p: float = 0.2,
     ) -> None:
         super().__init__()
         self.lateral = nn.ModuleList(
