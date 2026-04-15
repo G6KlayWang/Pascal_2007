@@ -109,11 +109,17 @@ def build_internal_split(
     voc_root = Path(voc_root)
     output_dir = ensure_dir(output_dir)
     manifest_path = output_dir / "splits.json"
-    train_ids = sorted(get_split_ids(voc_root, "train"))
+    all_train_ids = sorted(get_split_ids(voc_root, "train"))
     test_ids = sorted(get_split_ids(voc_root, "val"))
+    rng = random.Random(seed)
+    shuffled = list(all_train_ids)
+    rng.shuffle(shuffled)
+    n_val = max(1, int(round(val_ratio * len(shuffled)))) if val_ratio > 0 else 0
+    val_internal = sorted(shuffled[:n_val])
+    train_split = sorted(shuffled[n_val:]) if n_val > 0 else all_train_ids
     manifest = {
-        "train": train_ids,
-        "val_internal": test_ids,
+        "train": train_split,
+        "val_internal": val_internal if val_internal else test_ids,
         "test": test_ids,
     }
     if manifest_path.exists():

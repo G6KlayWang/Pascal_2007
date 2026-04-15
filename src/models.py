@@ -104,6 +104,57 @@ class DeepLabWrapper(nn.Module):
         return self.model(x)["out"]
 
 
+class DropPath(nn.Module):
+    def __init__(self, drop_prob: float = 0.0) -> None:
+        super().__init__()
+        self.drop_prob = drop_prob
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.drop_prob <= 0.0 or not self.training:
+            return x
+        keep = 1.0 - self.drop_prob
+        shape = (x.shape[0],) + (1,) * (x.ndim - 1)
+        mask = x.new_empty(shape).bernoulli_(keep).div_(keep)
+        return x * mask
+
+
+class LoRALinear(nn.Module):
+    def __init__(self, base: nn.Linear, rank: int, alpha: float, dropout: float = 0.0) -> None:
+        super().__init__()
+        self.base = base
+        for param in self.base.parameters():
+            param.requires_grad = False
+        self.rank = rank
+        self.scaling = alpha / rank
+        self.lora_dropout = nn.Dropout(p=dropout) if dropout > 0 else nn.Identity()
+        self.lora_A = nn.Parameter(torch.zeros(rank, base.in_features))
+        self.lora_B = nn.Parameter(torch.zeros(base.out_features, rank))
+        nn.init.kaiming_uniform_(self.lora_A, a=5 ** 0.5)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        out = self.base(x)
+        delta = self.lora_dropout(x) @ self.lora_A.t() @ self.lora_B.t()
+        return out + delta * self.scaling
+
+
+def apply_lora_to_module(
+    module: nn.Module,
+    target_suffixes: list[str],
+    rank: int,
+    alpha: float,
+    dropout: float = 0.0,
+) -> int:
+    replaced = 0
+    for parent_name, parent in module.named_modules():
+        for child_name, child in list(parent.named_children()):
+            if not isinstance(child, nn.Linear):
+                continue
+            if child_name in target_suffixes:
+                setattr(parent, child_name, LoRALinear(child, rank=rank, alpha=alpha, dropout=dropout))
+                replaced += 1
+    return replaced
+
+
 class FPNUNetDecoder(nn.Module):
     def __init__(
         self,
@@ -111,6 +162,7 @@ class FPNUNetDecoder(nn.Module):
         num_classes: int,
         fpn_channels: int = 256,
         dropout_p: float = 0.1,
+        drop_path_p: float = 0.0,
     ) -> None:
         super().__init__()
         self.lateral = nn.ModuleList(
@@ -126,24 +178,25 @@ class FPNUNetDecoder(nn.Module):
                 for _ in in_channels_list
             ]
         )
+        self.drop_path = DropPath(drop_path_p)
         self.dropout = nn.Dropout2d(p=dropout_p)
         self.head = nn.Sequential(
             nn.Conv2d(fpn_channels, fpn_channels, kernel_size=3, padding=1, bias=False),
             nn.GroupNorm(32, fpn_channels),
             nn.ReLU(inplace=True),
+            nn.Dropout2d(p=dropout_p),
             nn.Conv2d(fpn_channels, num_classes, kernel_size=1),
         )
 
     def forward(self, features: list[torch.Tensor], output_size: tuple[int, int]) -> torch.Tensor:
         laterals = [lat(feat) for lat, feat in zip(self.lateral, features)]
-        x = laterals[-1]
-        x = self.fuse[-1](x)
+        x = self.drop_path(self.fuse[-1](laterals[-1]))
         x = self.dropout(x)
         for idx in range(len(laterals) - 2, -1, -1):
             skip = laterals[idx]
             x = F.interpolate(x, size=skip.shape[-2:], mode="bilinear", align_corners=False)
             x = x + skip
-            x = self.fuse[idx](x)
+            x = self.drop_path(self.fuse[idx](x))
             x = self.dropout(x)
         x = self.head(x)
         return F.interpolate(x, size=output_size, mode="bilinear", align_corners=False)
@@ -158,6 +211,9 @@ class SAM2SemanticSeg(nn.Module):
         freeze_backbone: bool = True,
         unfreeze_patterns: list[str] | None = None,
         device: str = "cpu",
+        lora: dict[str, Any] | None = None,
+        decoder_dropout: float = 0.1,
+        decoder_drop_path: float = 0.0,
     ) -> None:
         super().__init__()
         try:
@@ -188,13 +244,30 @@ class SAM2SemanticSeg(nn.Module):
             unfreeze_patterns=unfreeze_patterns or [],
         )
 
+        lora_cfg = lora or {}
+        if lora_cfg.get("enabled", False):
+            replaced = apply_lora_to_module(
+                self.backbone,
+                target_suffixes=list(lora_cfg.get("target_suffixes", ["qkv", "proj"])),
+                rank=int(lora_cfg.get("rank", 8)),
+                alpha=float(lora_cfg.get("alpha", 16)),
+                dropout=float(lora_cfg.get("dropout", 0.0)),
+            )
+            print(f"[SAM2] applied LoRA to {replaced} linear layers "
+                  f"(rank={lora_cfg.get('rank', 8)}, alpha={lora_cfg.get('alpha', 16)})")
+
         dummy = torch.zeros(1, 3, 1024, 1024, device=device)
         with torch.no_grad():
             pyramid = self._extract_pyramid(self.backbone.forward_image(dummy))
         for idx, feat in enumerate(pyramid):
             print(f"[SAM2] pyramid level {idx} shape: {tuple(feat.shape)}")
         in_channels_list = [feat.shape[1] for feat in pyramid]
-        self.decoder = FPNUNetDecoder(in_channels_list, num_classes=num_classes)
+        self.decoder = FPNUNetDecoder(
+            in_channels_list,
+            num_classes=num_classes,
+            dropout_p=decoder_dropout,
+            drop_path_p=decoder_drop_path,
+        )
 
     def _configure_backbone_training(self, freeze_backbone: bool, unfreeze_patterns: list[str]) -> None:
         if not freeze_backbone:
@@ -299,5 +372,8 @@ def build_model(config: dict[str, Any], device: torch.device) -> nn.Module:
             freeze_backbone=model_cfg.get("freeze_backbone", True),
             unfreeze_patterns=model_cfg.get("unfreeze_patterns", []),
             device=str(device),
+            lora=model_cfg.get("lora"),
+            decoder_dropout=float(model_cfg.get("decoder_dropout", 0.1)),
+            decoder_drop_path=float(model_cfg.get("decoder_drop_path", 0.0)),
         ).to(device)
     raise ValueError(f"Unknown model type: {model_type}")

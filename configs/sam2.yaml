@@ -16,10 +16,15 @@ model:
   sam2_config: ./sam2_configs/sam2.1_hiera_l.yaml
   sam2_checkpoint: ./checkpoints/sam2.1_hiera_large.pt
   freeze_backbone: true
-  unfreeze_patterns:
-    - image_encoder.trunk.blocks.10
-    - image_encoder.trunk.blocks.11
-    - image_encoder.trunk.neck
+  unfreeze_patterns: []
+  lora:
+    enabled: true
+    rank: 8
+    alpha: 16
+    dropout: 0.0
+    target_suffixes: [qkv, proj]
+  decoder_dropout: 0.3
+  decoder_drop_path: 0.1
 train:
   epochs: 80
   batch_size: 8
@@ -28,6 +33,8 @@ train:
   decoder_lr: 0.0005
   backbone_lr: 0.00005
   weight_decay: 0.0001
+  decoder_weight_decay: 0.05
+  backbone_weight_decay: 0.0001
   warmup_epochs: 10
   early_stopping_patience: 25
   min_epochs_before_stopping: 50
@@ -35,7 +42,7 @@ train:
   amp: true
   grad_clip: 1.0
   use_ema: true
-  ema_decay: 0.999
+  ema_decay: 0.997
 loss:
   name: ce_dice
   ce_weight: 1.0
