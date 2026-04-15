@@ -29,10 +29,17 @@ class SegmentationLoss:
         self.name = config["loss"]["name"]
         self.ce_weight = float(config["loss"].get("ce_weight", 1.0))
         self.dice_weight = float(config["loss"].get("dice_weight", 1.0))
+        self.label_smoothing = float(config["loss"].get("label_smoothing", 0.0))
         self.class_weights = class_weights
 
     def __call__(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
-        ce = F.cross_entropy(logits, targets, weight=self.class_weights, ignore_index=IGNORE_INDEX)
+        ce = F.cross_entropy(
+            logits,
+            targets,
+            weight=self.class_weights,
+            ignore_index=IGNORE_INDEX,
+            label_smoothing=self.label_smoothing,
+        )
         dice = multiclass_dice_loss(logits, targets)
         if self.name == "ce":
             return ce

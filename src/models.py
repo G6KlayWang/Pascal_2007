@@ -105,7 +105,13 @@ class DeepLabWrapper(nn.Module):
 
 
 class FPNUNetDecoder(nn.Module):
-    def __init__(self, in_channels_list: list[int], num_classes: int, fpn_channels: int = 256) -> None:
+    def __init__(
+        self,
+        in_channels_list: list[int],
+        num_classes: int,
+        fpn_channels: int = 256,
+        dropout_p: float = 0.1,
+    ) -> None:
         super().__init__()
         self.lateral = nn.ModuleList(
             [nn.Conv2d(ch, fpn_channels, kernel_size=1, bias=False) for ch in in_channels_list]
@@ -120,6 +126,7 @@ class FPNUNetDecoder(nn.Module):
                 for _ in in_channels_list
             ]
         )
+        self.dropout = nn.Dropout2d(p=dropout_p)
         self.head = nn.Sequential(
             nn.Conv2d(fpn_channels, fpn_channels, kernel_size=3, padding=1, bias=False),
             nn.GroupNorm(32, fpn_channels),
@@ -131,11 +138,13 @@ class FPNUNetDecoder(nn.Module):
         laterals = [lat(feat) for lat, feat in zip(self.lateral, features)]
         x = laterals[-1]
         x = self.fuse[-1](x)
+        x = self.dropout(x)
         for idx in range(len(laterals) - 2, -1, -1):
             skip = laterals[idx]
             x = F.interpolate(x, size=skip.shape[-2:], mode="bilinear", align_corners=False)
             x = x + skip
             x = self.fuse[idx](x)
+            x = self.dropout(x)
         x = self.head(x)
         return F.interpolate(x, size=output_size, mode="bilinear", align_corners=False)
 
