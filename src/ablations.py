@@ -1,64 +1,64 @@
 from __future__ import annotations
 
 import argparse
-import json
 import subprocess
 import sys
 from pathlib import Path
 
 from src.config import load_config
-from src.utils import ensure_dir, save_csv
+from src.utils import ensure_dir, save_json
 
 
-ABLATIONS = {
-    "augmentation": [
-        ("no_aug", ["augmentation.enabled=false", "experiment.run_name=unet-no-aug"]),
-        ("default_aug", ["augmentation.enabled=true", "experiment.run_name=unet-default-aug"]),
-    ],
-    "loss": [
-        ("ce", ["loss.name=ce", "experiment.run_name=unet-loss-ce"]),
-        ("dice", ["loss.name=dice", "experiment.run_name=unet-loss-dice"]),
-    ],
-    "model_size": [
-        ("resnet18", ["model.encoder=resnet18", "experiment.run_name=unet-resnet18"]),
-        ("resnet50", ["model.encoder=resnet50", "experiment.run_name=unet-resnet50"]),
-    ],
-}
+def build_ablations(model_type: str) -> dict[str, list[tuple[str, list[str]]]]:
+    prefix = model_type
+    return {
+        "model_size": [
+            ("resnet18", [f"model.encoder=resnet18", f"experiment.run_name={prefix}-resnet18"]),
+            ("resnet50", [f"model.encoder=resnet50", f"experiment.run_name={prefix}-resnet50"]),
+        ],
+        "augmentation": [
+            ("no_aug",   [f"augmentation.enabled=false", f"experiment.run_name={prefix}-no-aug"]),
+            ("with_aug", [f"augmentation.enabled=true",  f"experiment.run_name={prefix}-with-aug"]),
+        ],
+        "loss": [
+            ("ce",   [f"loss.name=ce",   f"experiment.run_name={prefix}-loss-ce"]),
+            ("dice", [f"loss.name=dice", f"experiment.run_name={prefix}-loss-dice"]),
+        ],
+    }
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run ablation studies.")
+    parser = argparse.ArgumentParser(description="Train ablation variants (training only; evaluation handled separately).")
     parser.add_argument("--config", required=True)
-    parser.add_argument("--type", choices=sorted(ABLATIONS.keys()), required=True)
+    parser.add_argument("--type", required=True, choices=["model_size", "augmentation", "loss"])
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
     config = load_config(args.config)
-    ablation_dir = ensure_dir(Path(config["experiment"]["output_root"]) / "ablations" / args.type)
-    root = Path(__file__).resolve().parent.parent
-    rows = []
-    for _, overrides in ABLATIONS[args.type]:
-        cmd = [sys.executable, "-m", "src.train", "--config", args.config, "--set", *overrides]
-        subprocess.run(cmd, cwd=root, check=True)
+    model_type = config["model"]["type"]
+    variants = build_ablations(model_type)[args.type]
+    output_root = Path(config["experiment"]["output_root"])
+    ablation_dir = ensure_dir(output_root / "ablations" / model_type / args.type)
+    project_root = Path(__file__).resolve().parent.parent
+
+    runs = []
+    for label, overrides in variants:
         run_name = next(value.split("=", 1)[1] for value in overrides if value.startswith("experiment.run_name="))
-        checkpoint_path = root / "outputs" / "train_logs" / "unet" / run_name / "checkpoints" / "best.pt"
-        eval_cmd = [sys.executable, "-m", "src.evaluate", "--config", args.config, "--checkpoint", str(checkpoint_path), "--set", *overrides]
-        subprocess.run(eval_cmd, cwd=root, check=True)
-        metrics_path = root / "outputs" / "eval" / "unet" / run_name / "metrics.json"
-        with metrics_path.open("r", encoding="utf-8") as handle:
-            metrics = json.load(handle)
-        rows.append(
-            {
-                "run_name": run_name,
-                "mean_iou": metrics["mean_iou"],
-                "mean_dice": metrics["mean_dice"],
-                "pixel_accuracy": metrics["pixel_accuracy"],
-                "mean_hd95": metrics["mean_hd95"],
-            }
-        )
-    save_csv(ablation_dir / "summary.csv", rows)
+        print(f"\n>>> [ablation:{args.type}] training {label} -> {run_name}")
+        cmd = [sys.executable, "-m", "src.train", "--config", args.config, "--set", *overrides]
+        subprocess.run(cmd, cwd=project_root, check=True)
+        runs.append({
+            "label": label,
+            "run_name": run_name,
+            "model_type": model_type,
+            "config": args.config,
+            "overrides": overrides,
+            "checkpoint": str(output_root / "train_logs" / model_type / run_name / "checkpoints" / "best.pt"),
+        })
+    save_json(ablation_dir / "runs.json", {"type": args.type, "model_type": model_type, "runs": runs})
+    print(f"\n[ablation:{args.type}] manifest -> {ablation_dir / 'runs.json'}")
 
 
 if __name__ == "__main__":
