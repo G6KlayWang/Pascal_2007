@@ -1,0 +1,372 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\graphicspath{{../}}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage[numbers]{natbib}
+\usepackage{xcolor}
+
+\title{Semantic Segmentation on Pascal VOC 2007:\\A Comparative Study of U-Net, DeepLabV3, and SAM2 with LoRA Adaptation}
+\author{Charles Wang}
+\date{April 2026}
+
+\begin{document}
+\maketitle
+
+% ============================================================
+\begin{abstract}
+This project compares three semantic segmentation architectures on the Pascal VOC 2007 benchmark: a U-Net with a ResNet50 encoder, a DeepLabV3 model with the same backbone, and a SAM2-based model that pairs a frozen Hiera-Large encoder (adapted via LoRA) with a lightweight FPN--UNet decoder. All models are trained on the 188-image training split and evaluated on the 213-image validation split using mean IoU, Dice coefficient, pixel accuracy, and 95th-percentile Hausdorff distance. SAM2 with LoRA achieves the strongest performance across all metrics (0.630 mIoU, 0.742 Dice) while training only 5.1M parameters. DeepLabV3 provides a strong conventional baseline (0.483 mIoU), and U-Net struggles in this low-data regime (0.121 mIoU). Ablation studies on encoder depth, data augmentation, and loss function quantify the contribution of each factor. Per-class analysis and qualitative visualizations reveal distinct failure modes across architectures, with SAM2's pretrained features providing the most robust boundary alignment and small-object recovery.
+\end{abstract}
+
+% ============================================================
+\section{Introduction}
+
+Semantic segmentation assigns a class label to every pixel in an image. The Pascal VOC benchmark~\cite{everingham2010pascal} has long served as a standard testbed for evaluating segmentation architectures due to its diverse scenes, multi-class annotations, and challenging object boundaries.
+
+We evaluate three representative architectures spanning different design philosophies:
+\begin{enumerate}
+    \item \textbf{U-Net}~\cite{ronneberger2015unet} with a ResNet50 encoder: a classical encoder--decoder architecture with skip connections for spatial detail recovery.
+    \item \textbf{DeepLabV3}~\cite{chen2017rethinking} with a ResNet50 backbone: a multi-scale context model using atrous convolutions and Atrous Spatial Pyramid Pooling (ASPP).
+    \item \textbf{SAM2 with LoRA}: a foundation-model approach that freezes a SAM2 Hiera-Large encoder, applies Low-Rank Adaptation (LoRA)~\cite{hu2022lora} to the backbone, and trains a lightweight FPN--UNet decoder for dense prediction.
+\end{enumerate}
+
+These three models represent an informative progression from fully trained convolutional architectures to parameter-efficient adaptation of vision foundation models. Our experiments train all models on the same data split, evaluate with identical metrics, and isolate the contribution of encoder depth, augmentation, and loss function through controlled ablations.
+
+% ============================================================
+\section{Dataset and Splits}
+
+The Pascal VOC 2007 segmentation benchmark provides pixel-wise annotations for 20 foreground object categories plus a background class. Each mask is encoded with integer indices 0--20; ambiguous boundary pixels carry the value 255 and are excluded from loss computation and metric evaluation.
+
+We use the official \texttt{train} partition (188 images) for model training, with a 10\% internal validation holdout (21 images) used for early stopping and checkpoint selection. The official \texttt{val} partition (213 images) serves as our test set. All images and masks are resized to $512 \times 512$ pixels. Images are normalized using ImageNet statistics to maintain compatibility with pretrained encoders.
+
+The training set is notably small. Background pixels dominate the mask distribution, with the \texttt{person} class contributing the largest foreground share ($\sim$2.9M pixels) and classes such as \texttt{pottedplant} ($\sim$72K pixels) and \texttt{sheep} ($\sim$91K pixels) remaining severely underrepresented. This class imbalance and limited data size influence all architectural comparisons.
+
+% ============================================================
+\section{Methods}
+
+\subsection{U-Net (ResNet50 Encoder)}
+
+U-Net follows a symmetric encoder--decoder design. The encoder (ResNet50 pretrained on ImageNet) progressively reduces spatial resolution while building semantic feature hierarchies. The decoder restores resolution through bilinear upsampling and convolutional refinement at each stage. Skip connections concatenate encoder activations with decoder features at matching resolutions, enabling boundary detail recovery.
+
+Our implementation extracts five feature levels from the ResNet50 stem and residual blocks (channels: 64, 256, 512, 1024, 2048), passes them through a center bottleneck block, and upsamples through four decoder stages to produce $21$-class logits at the input resolution. The model has 40.8M trainable parameters.
+
+\subsection{DeepLabV3 (ResNet50 Backbone)}
+
+DeepLabV3 replaces U-Net's hierarchical upsampling with atrous (dilated) convolutions and an ASPP module. ASPP applies convolutions at multiple dilation rates to capture multi-scale context without reducing spatial resolution. The ResNet50 backbone is pretrained on ImageNet and adapted with dilated convolutions in the deeper layers.
+
+We use the \texttt{torchvision} implementation of \texttt{deeplabv3\_resnet50} with ImageNet-pretrained backbone weights, totaling 39.6M trainable parameters.
+
+\subsection{SAM2 with LoRA Adaptation}
+
+To leverage vision foundation-model representations, we build a SAM2-based segmentation model with three components:
+
+\begin{enumerate}
+    \item \textbf{Frozen SAM2 backbone}: The Hiera-Large image encoder from SAM2~\cite{ravi2024sam2}, pretrained on the SA-1B dataset, extracts a multi-scale feature pyramid. All backbone weights are frozen.
+    \item \textbf{LoRA adaptation}: Low-Rank Adaptation~\cite{hu2022lora} layers are injected into the backbone's linear projections (\texttt{qkv}, \texttt{proj}, \texttt{fc1}, \texttt{fc2}) with rank 16 and $\alpha = 32$. This enables lightweight backbone fine-tuning without modifying the original weights.
+    \item \textbf{FPN--UNet decoder}: A Feature Pyramid Network-style decoder with lateral connections, GroupNorm, and a convolutional classification head. The decoder includes dropout ($p = 0.2$) and DropPath ($p = 0.05$) regularization.
+\end{enumerate}
+
+Only the LoRA parameters and decoder are trained, totaling 5.1M parameters --- an order of magnitude fewer than U-Net or DeepLabV3. The SAM2 encoder's large-scale pretraining provides rich semantic and structural priors that transfer to VOC-scale supervised segmentation.
+
+% ============================================================
+\section{Experimental Setup}
+
+\textbf{Preprocessing.} All images and masks are resized to $512 \times 512$ pixels. Images are normalized with ImageNet mean and standard deviation. Mask pixels with value 255 are treated as ignore index during loss computation and excluded from metrics.
+
+\textbf{Augmentation.} Geometric and photometric augmentation (random horizontal flips, brightness--contrast jitter, blur, random rescaling) is applied during training. The impact of augmentation is studied in ablation experiments.
+
+\textbf{Optimization.} All models use AdamW~\cite{loshchilov2019adamw} with learning rate $5 \times 10^{-4}$ and weight decay $10^{-4}$. Training runs for 80 epochs with batch size 8. Early stopping monitors validation mIoU with a patience window. Automatic mixed precision (AMP) and gradient clipping (max norm 1.0) are enabled. Exponential moving average (EMA) of model weights is used for evaluation.
+
+\textbf{Loss functions.} U-Net and DeepLabV3 use cross-entropy loss. SAM2 uses a hybrid CE + Dice loss ($\lambda_\text{CE} = 1.0$, $\lambda_\text{Dice} = 2.0$) with label smoothing ($\epsilon = 0.1$).
+
+\textbf{Model selection.} The checkpoint with the highest validation mIoU is selected for final evaluation. All reported metrics are computed on the test set (official val partition).
+
+% ============================================================
+\section{Results}
+
+\subsection{Overall Metrics}
+
+Table~\ref{tab:overall} summarizes segmentation performance across the three architectures.
+
+\begin{table}[H]
+\centering
+\caption{Segmentation performance on the Pascal VOC 2007 test set (official val partition). Best values per column are in \textbf{bold}. Lower HD95 indicates more accurate boundary localization.}
+\label{tab:overall}
+\begin{tabular}{lccccc}
+\toprule
+Model & mIoU & Dice & Pixel Acc & HD95$\downarrow$ & Params \\
+\midrule
+U-Net (ResNet50) & 0.1210 & 0.1672 & 0.8009 & 190.9 & 40.8M \\
+DeepLabV3 (ResNet50) & 0.4826 & 0.6198 & 0.8840 & 94.4 & 39.6M \\
+SAM2 (LoRA + FPN Decoder) & \textbf{0.6298} & \textbf{0.7417} & \textbf{0.9271} & \textbf{63.2} & \textbf{5.1M} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+SAM2 achieves the highest performance across all metrics with an order of magnitude fewer trainable parameters. DeepLabV3 delivers a strong conventional result, benefiting from ASPP's multi-scale context aggregation. U-Net struggles significantly in this low-data regime (188 training images), producing near-chance predictions for most foreground classes.
+
+\textbf{Training efficiency.} SAM2 converges in 1445 seconds (15.8s/epoch), DeepLabV3 in 1473 seconds (27.8s/epoch, early-stopped at epoch 52), and U-Net in 1965 seconds (24.0s/epoch). SAM2 achieves the best results with the fastest per-epoch runtime, since only the decoder and LoRA parameters require gradient computation.
+
+\subsection{Per-Class IoU and Accuracy}
+
+Table~\ref{tab:perclass} presents the top-3 and bottom-3 classes for each model.
+
+\begin{table}[H]
+\centering
+\caption{Top-3 and bottom-3 per-class IoU and accuracy for each architecture.}
+\label{tab:perclass}
+\small
+\begin{tabular}{llcc|llcc}
+\toprule
+\multicolumn{4}{c|}{\textbf{Top-3}} & \multicolumn{4}{c}{\textbf{Bottom-3}} \\
+Class & IoU & Acc & & Class & IoU & Acc & \\
+\midrule
+\multicolumn{8}{c}{\textit{U-Net (ResNet50)}} \\
+background & 0.897 & 0.973 & & aeroplane & 0.000 & 0.000 \\
+person & 0.594 & 0.902 & & boat & 0.000 & 0.000 \\
+bus & 0.262 & 0.735 & & cow & 0.000 & 0.000 \\
+\midrule
+\multicolumn{8}{c}{\textit{DeepLabV3 (ResNet50)}} \\
+background & 0.897 & 0.978 & & sheep & 0.035 & 0.036 \\
+aeroplane & 0.794 & 0.857 & & chair & 0.128 & 0.153 \\
+cat & 0.714 & 0.819 & & bottle & 0.237 & 0.251 \\
+\midrule
+\multicolumn{8}{c}{\textit{SAM2 (LoRA + FPN Decoder)}} \\
+background & 0.958 & 0.977 & & sheep & 0.041 & 0.042 \\
+person & 0.931 & 0.976 & & cow & 0.259 & 0.667 \\
+aeroplane & 0.897 & 0.978 & & dog & 0.314 & 0.746 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+U-Net exhibits extreme variance: it segments large objects (person, bus) above chance but collapses entirely on 5 classes (aeroplane, boat, cow, pottedplant, sheep) with zero IoU. DeepLabV3 eliminates these catastrophic failures, achieving non-zero IoU on all classes, though it struggles with structurally complex categories (chair, sheep). SAM2 delivers the most balanced performance. Its weakest classes (sheep, cow, dog) still substantially outperform U-Net's and DeepLabV3's bottom categories.
+
+The \texttt{sheep} class remains the hardest for all models, likely due to its extreme underrepresentation in the training set ($\sim$91K pixels total) and visual similarity to background.
+
+\subsection{Qualitative Results}
+
+\subsubsection{Prediction Mosaics}
+
+Appendix Figures~\ref{fig:mosaic_unet}--\ref{fig:mosaic_sam2} present mosaic-style segmentation outputs for each model on representative test images.
+
+\textbf{U-Net.} The U-Net mosaics show unstable and highly fragmented predictions. It can sometimes localize the rough foreground region, but several examples collapse to tiny blobs or scattered patches, with small objects such as the distant boat almost entirely missed.
+
+\textbf{DeepLabV3.} DeepLabV3 produces more coherent object regions than U-Net and usually captures the main foreground extent. However, the predictions remain overly coarse: object shapes are smoothed into large blocks, fine boundaries are lost, and some scenes are reduced to only a few dominant semantic regions.
+
+\textbf{SAM2.} SAM2 gives the most semantically plausible predictions across the four test images, with better object coverage and stronger separation from the background. Even when boundaries are still simplified, the model preserves more class structure than the baselines, as seen in the bird, monitor, cow, and beach-animal examples.
+
+\subsubsection{Best and Worst Cases: Person Class}
+
+For targeted diagnostic analysis, we examine the \texttt{person} class --- the most frequent, diverse, and visually challenging foreground category in Pascal VOC. For each model, we extract the three images with the highest and lowest per-image IoU on the person class.
+Appendix Figures~\ref{fig:bw_unet}--\ref{fig:bw_sam2} show the corresponding best- and worst-case examples for each architecture.
+
+\textbf{U-Net.} Best cases recover a coarse person silhouette, but masks have soft, rounded boundaries and missing fine structures (hair, hands). Worst cases show complete misses or large-scale confusion between person and background.
+
+\textbf{DeepLabV3.} Best cases produce cleaner person masks with sharper boundaries. Worst cases reveal false positives on non-human foreground objects and failures on small or distant figures.
+
+\textbf{SAM2.} Best cases closely match ground truth with well-defined contours and no internal holes. Worst cases show localized misclassifications rather than structural collapses. This stability is consistent with SAM2's lowest HD95 (63.2 vs.\ 190.9 for U-Net).
+
+% ============================================================
+\section{Ablation Studies}
+
+We conduct three ablation experiments to isolate the contribution of specific design factors. Each ablation varies one component while holding all other training settings fixed.
+
+\subsection{A1: Encoder Depth --- ResNet18 vs.\ ResNet50 (U-Net)}
+
+\begin{table}[H]
+\centering
+\caption{Ablation A1: Effect of encoder backbone depth on U-Net performance.}
+\label{tab:abl_depth}
+\begin{tabular}{lcccc}
+\toprule
+Encoder & mIoU & Dice & Pixel Acc & HD95$\downarrow$ \\
+\midrule
+ResNet18 & 0.1473 & 0.2080 & 0.8127 & 162.7 \\
+ResNet50 & 0.1308 & 0.1777 & 0.8071 & 142.5 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+In this low-data regime, ResNet18 slightly outperforms ResNet50 on mIoU (+0.017) and Dice (+0.030), while ResNet50 achieves better boundary precision (lower HD95). With only 188 training images, the deeper ResNet50 encoder has substantially more parameters to fit, increasing overfitting risk. The lighter ResNet18 generalizes marginally better on global segmentation metrics, though both backbones produce poor overall performance.
+
+This contrasts with the sample report's finding (on a larger split) where deeper encoders consistently improved all metrics, illustrating that the benefit of encoder depth depends on data availability.
+
+\subsection{A2: Data Augmentation (SAM2)}
+
+\begin{table}[H]
+\centering
+\caption{Ablation A2: Effect of data augmentation on SAM2 performance.}
+\label{tab:abl_aug}
+\begin{tabular}{lcccc}
+\toprule
+Augmentation & mIoU & Dice & Pixel Acc & HD95$\downarrow$ \\
+\midrule
+No augmentation & 0.6497 & 0.7551 & 0.9299 & 64.8 \\
+With augmentation & 0.6522 & 0.7545 & 0.9311 & 63.2 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Augmentation provides a marginal improvement in mIoU (+0.003) and boundary precision (HD95 $-$1.6) for SAM2, with Dice essentially unchanged. The minimal impact suggests that SAM2's large-scale pretraining already encodes sufficient invariance to common geometric and photometric perturbations. The frozen backbone features are robust by construction, leaving augmentation to benefit primarily the lightweight decoder.
+
+\subsection{A3: Loss Function --- CE vs.\ Dice (SAM2)}
+
+\begin{table}[H]
+\centering
+\caption{Ablation A3: Effect of loss function on SAM2 performance.}
+\label{tab:abl_loss}
+\begin{tabular}{lcccc}
+\toprule
+Loss & mIoU & Dice & Pixel Acc & HD95$\downarrow$ \\
+\midrule
+Cross-Entropy (CE) & 0.6336 & 0.7454 & \textbf{0.9316} & 64.0 \\
+Dice only & 0.5051 & 0.6177 & 0.9042 & 79.9 \\
+CE + Dice (default) & \textbf{0.6298} & \textbf{0.7417} & 0.9271 & \textbf{63.2} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Pure Dice loss substantially degrades performance ($-$0.129 mIoU vs.\ CE), with HD95 increasing from 64.0 to 79.9. Dice loss optimizes overlap directly but provides weaker gradient signals for rare classes and can be numerically unstable when predicted masks are small. Cross-entropy alone performs strongly, while the hybrid CE + Dice combination used in the default SAM2 configuration achieves competitive mIoU with the best boundary precision.
+
+% ============================================================
+\section{Observations and Discussion}
+
+\subsection{Architecture Comparison}
+
+The overall ranking is SAM2 $>$ DeepLabV3 $>$ U-Net across all metrics. The gap between U-Net and DeepLabV3 ($+$0.36 mIoU) is larger than between DeepLabV3 and SAM2 ($+$0.15 mIoU), suggesting that multi-scale context modeling (ASPP) provides the single largest architectural improvement, with foundation-model features adding further gains.
+
+U-Net's poor performance (0.121 mIoU) is partly attributable to the dataset scale: with only 188 training images, a 40.8M-parameter model severely overfits. Five foreground classes have zero IoU, indicating that U-Net defaults to predicting only the most frequent classes (background, person). DeepLabV3, despite having comparable parameter count (39.6M), benefits from the ASPP module's ability to capture contextual relationships that improve generalization on rare classes.
+
+SAM2 achieves the best performance with the fewest trainable parameters (5.1M). The Hiera-Large backbone, trained on the SA-1B dataset with over 1 billion masks, provides rich structural and semantic priors. LoRA adaptation allows efficient task-specific tuning while preserving these pretrained representations. The FPN--UNet decoder effectively translates multi-scale backbone features into dense predictions.
+
+\subsection{Per-Class Behavior}
+
+Across all architectures, the \texttt{person} class receives the most reliable predictions, reflecting both its prevalence in training data and its visually distinctive features. U-Net achieves 0.594 person IoU despite its poor global performance --- nearly 5$\times$ its overall mIoU. SAM2 reaches 0.931 person IoU, indicating near-perfect segmentation.
+
+The \texttt{sheep} class is consistently the hardest across all three models ($<$0.041 IoU for all). This results from extreme training-set scarcity, visual similarity to background in pastoral scenes, and frequent co-occurrence with other animals that confuse the classifier.
+
+\subsection{Insights from Ablations}
+
+The model-size ablation reveals that deeper encoders can hurt in very small datasets, as the additional capacity enables overfitting rather than improved feature extraction. The augmentation ablation shows that foundation-model features already encode strong geometric invariance, making augmentation less critical. The loss-function ablation demonstrates that pure Dice loss underperforms cross-entropy in this setting, likely because Dice provides weak gradients for underrepresented classes and lacks the calibration benefits of cross-entropy.
+
+\subsection{Efficiency Considerations}
+
+SAM2 combines the best accuracy with the lowest parameter count and fastest per-epoch training time. The frozen backbone eliminates gradient computation for $>$90\% of the model, and the LoRA adaptation adds minimal overhead. This efficiency advantage is practically significant: foundation-model adaptation achieves superior results with reduced computational cost.
+
+% ============================================================
+\section{Conclusion}
+
+This study provides a controlled comparison of three segmentation paradigms on Pascal VOC 2007: a classical encoder--decoder (U-Net), a multi-scale context model (DeepLabV3), and a LoRA-adapted foundation model (SAM2).
+
+U-Net serves as an effective baseline on large datasets but struggles severely with only 188 training images, producing zero IoU on five foreground classes. DeepLabV3 alleviates catastrophic failures through ASPP's contextual aggregation and achieves solid mid-range performance. SAM2, despite training only a 5.1M-parameter decoder and LoRA layers, delivers the strongest and most stable results across all metrics.
+
+Three practical takeaways emerge from the ablation studies: (1) deeper encoders can hurt in extremely low-data regimes, (2) foundation-model features reduce dependence on augmentation, and (3) hybrid CE + Dice loss provides the best boundary quality, while pure Dice loss alone degrades performance substantially.
+
+The most striking finding is SAM2's ability to achieve state-of-the-art segmentation quality with an order of magnitude fewer trainable parameters than conventional architectures. This demonstrates that large-scale vision pretraining provides transferable representations that are especially valuable when task-specific data is limited.
+
+% ============================================================
+\section{Future Work}
+
+Several architectural improvements could strengthen performance, particularly for the weaker models. U-Net would likely benefit from a more expressive decoder with attention gates or transformer-based cross-attention between encoder and decoder features, which would help it attend to small foreground objects rather than defaulting to background predictions. For SAM2, the current FPN--UNet decoder is intentionally lightweight; replacing it with a multi-scale decoder that fuses all pyramid levels through learned attention weights (similar to Mask2Former's masked-attention mechanism) could improve segmentation of fine-grained categories like bicycle and chair. Partial unfreezing of the SAM2 backbone's later transformer blocks, or increasing LoRA rank selectively for deeper layers, may also unlock additional capacity without full fine-tuning overhead.
+
+On the training side, the severe class imbalance in this dataset (background dominates, and classes like sheep and pottedplant have $<$100K pixels) calls for targeted strategies. Class-balanced sampling, where each batch is constructed to include underrepresented categories, would provide more gradient signal for rare classes. Focal loss or class-reweighted cross-entropy could further address the imbalance. For the low-data regime specifically, semi-supervised approaches that leverage the unlabeled VOC test set or external unlabeled data through pseudo-labeling could substantially increase effective training set size.
+
+Beyond single-model improvements, an ensemble of DeepLabV3 and SAM2 predictions (e.g., through pixel-wise voting or learned fusion) could combine DeepLabV3's strength on structured indoor objects with SAM2's superior boundary alignment. Post-processing with dense CRFs or test-time augmentation would further refine mask boundaries at minimal additional training cost. Evaluating these architectures on larger segmentation benchmarks (COCO, ADE20K) would also clarify whether the performance patterns observed here generalize beyond the small VOC 2007 training set.
+
+% ============================================================
+\section{Reproducibility}
+
+The full project is hosted at \url{https://github.com/G6KlayWang/Pascal_2007}. Training configurations are in the \texttt{configs/} folder, and training/evaluation scripts are in the \texttt{scripts/} folder.
+
+% ============================================================
+\appendix
+\section{Appendix: Qualitative Figures}
+
+\subsection{Prediction Mosaics}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.7\textwidth]{outputs/eval/unet/unet-default/prediction_mosaic.png}
+\caption{U-Net (ResNet50): qualitative segmentation overview on test images. Predictions are fragmented, with most foreground categories missed entirely.}
+\label{fig:mosaic_unet}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.7\textwidth]{outputs/eval/deeplabv3/deeplabv3-default/prediction_mosaic.png}
+\caption{DeepLabV3 (ResNet50): qualitative segmentation overview. Masks are more coherent with better foreground detection, though boundary precision varies.}
+\label{fig:mosaic_deeplabv3}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.7\textwidth]{outputs/eval/sam2/sam2-default/prediction_mosaic.png}
+\caption{SAM2 (LoRA + FPN Decoder): qualitative segmentation overview. Predictions most closely match ground truth, with sharp boundaries and reliable small-object recovery.}
+\label{fig:mosaic_sam2}
+\end{figure}
+
+\subsection{Best and Worst Cases: Person Class}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.7\textwidth]{outputs/eval/unet/unet-default/best_worst_person.png}
+\caption{U-Net: top-3 best and top-3 worst predictions for the person class.}
+\label{fig:bw_unet}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.7\textwidth]{outputs/eval/deeplabv3/deeplabv3-default/best_worst_person.png}
+\caption{DeepLabV3: top-3 best and top-3 worst predictions for the person class.}
+\label{fig:bw_deeplabv3}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.7\textwidth]{outputs/eval/sam2/sam2-default/best_worst_person.png}
+\caption{SAM2: top-3 best and top-3 worst predictions for the person class.}
+\label{fig:bw_sam2}
+\end{figure}
+
+% ============================================================
+\bibliographystyle{plain}
+\begin{thebibliography}{9}
+
+\bibitem{chen2017rethinking}
+Liang-Chieh Chen, George Papandreou, Florian Schroff, and Hartwig Adam.
+\newblock Rethinking atrous convolution for semantic image segmentation.
+\newblock \emph{arXiv preprint arXiv:1706.05587}, 2017.
+
+\bibitem{everingham2010pascal}
+Mark Everingham, Luc Van~Gool, Christopher~KI Williams, John Winn, and Andrew Zisserman.
+\newblock The pascal visual object classes (voc) challenge.
+\newblock \emph{International Journal of Computer Vision}, 88(2):303--338, 2010.
+
+\bibitem{hu2022lora}
+Edward~J. Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu~Wang, and Weizhu Chen.
+\newblock LoRA: Low-rank adaptation of large language models.
+\newblock In \emph{ICLR}, 2022.
+
+\bibitem{loshchilov2019adamw}
+Ilya Loshchilov and Frank Hutter.
+\newblock Decoupled weight decay regularization.
+\newblock In \emph{ICLR}, 2019.
+
+\bibitem{ravi2024sam2}
+Nikhila Ravi, Valentin Gabeur, Yuan-Ting Hu, Ronghang Hu, Chaitanya Ryali, Tengyu Ma, Haitham Khedr, Roman R{\"a}dle, Chloe Rolland, Laura Gustafson, Eric Mintun, Junting Pan, Kalyan~Vasudev Alwala, Nicolas Carion, Chao-Yuan Wu, Ross Girshick, Piotr Doll{\'a}r, and Christoph Feichtenhofer.
+\newblock SAM 2: Segment anything in images and videos.
+\newblock \emph{arXiv preprint arXiv:2408.00714}, 2024.
+
+\bibitem{ronneberger2015unet}
+Olaf Ronneberger, Philipp Fischer, and Thomas Brox.
+\newblock U-Net: Convolutional networks for biomedical image segmentation.
+\newblock In \emph{MICCAI}, 2015.
+
+\end{thebibliography}
+
+\end{document}

@@ -1,0 +1,71 @@
+\relax 
+\providecommand\hyper@newdestlabel[2]{}
+\providecommand\HyField@AuxAddToFields[1]{}
+\providecommand\HyField@AuxAddToCoFields[2]{}
+\citation{everingham2010pascal}
+\citation{ronneberger2015unet}
+\citation{chen2017rethinking}
+\citation{hu2022lora}
+\@writefile{toc}{\contentsline {section}{\numberline {1}Introduction}{1}{section.1}\protected@file@percent }
+\citation{ravi2024sam2}
+\citation{hu2022lora}
+\@writefile{toc}{\contentsline {section}{\numberline {2}Dataset and Splits}{2}{section.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {3}Methods}{2}{section.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.1}U-Net (ResNet50 Encoder)}{2}{subsection.3.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.2}DeepLabV3 (ResNet50 Backbone)}{2}{subsection.3.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.3}SAM2 with LoRA Adaptation}{2}{subsection.3.3}\protected@file@percent }
+\citation{loshchilov2019adamw}
+\@writefile{toc}{\contentsline {section}{\numberline {4}Experimental Setup}{3}{section.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {5}Results}{3}{section.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Overall Metrics}{3}{subsection.5.1}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces Segmentation performance on the Pascal VOC 2007 test set (official val partition). Best values per column are in \textbf  {bold}. Lower HD95 indicates more accurate boundary localization.}}{3}{table.caption.1}\protected@file@percent }
+\providecommand*\caption@xref[2]{\@setref\relax\@undefined{#1}}
+\newlabel{tab:overall}{{1}{3}{Segmentation performance on the Pascal VOC 2007 test set (official val partition). Best values per column are in \textbf {bold}. Lower HD95 indicates more accurate boundary localization}{table.caption.1}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Per-Class IoU and Accuracy}{4}{subsection.5.2}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Top-3 and bottom-3 per-class IoU and accuracy for each architecture.}}{4}{table.caption.2}\protected@file@percent }
+\newlabel{tab:perclass}{{2}{4}{Top-3 and bottom-3 per-class IoU and accuracy for each architecture}{table.caption.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.3}Qualitative Results}{4}{subsection.5.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.3.1}Prediction Mosaics}{4}{subsubsection.5.3.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.3.2}Best and Worst Cases: Person Class}{5}{subsubsection.5.3.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {6}Ablation Studies}{5}{section.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.1}A1: Encoder Depth --- ResNet18 vs.\ ResNet50 (U-Net)}{5}{subsection.6.1}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces Ablation A1: Effect of encoder backbone depth on U-Net performance.}}{5}{table.caption.3}\protected@file@percent }
+\newlabel{tab:abl_depth}{{3}{5}{Ablation A1: Effect of encoder backbone depth on U-Net performance}{table.caption.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.2}A2: Data Augmentation (SAM2)}{5}{subsection.6.2}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {4}{\ignorespaces Ablation A2: Effect of data augmentation on SAM2 performance.}}{5}{table.caption.4}\protected@file@percent }
+\newlabel{tab:abl_aug}{{4}{5}{Ablation A2: Effect of data augmentation on SAM2 performance}{table.caption.4}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.3}A3: Loss Function --- CE vs.\ Dice (SAM2)}{6}{subsection.6.3}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {5}{\ignorespaces Ablation A3: Effect of loss function on SAM2 performance.}}{6}{table.caption.5}\protected@file@percent }
+\newlabel{tab:abl_loss}{{5}{6}{Ablation A3: Effect of loss function on SAM2 performance}{table.caption.5}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {7}Observations and Discussion}{6}{section.7}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.1}Architecture Comparison}{6}{subsection.7.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.2}Per-Class Behavior}{6}{subsection.7.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.3}Insights from Ablations}{7}{subsection.7.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.4}Efficiency Considerations}{7}{subsection.7.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {8}Conclusion}{7}{section.8}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {9}Future Work}{7}{section.9}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {10}Reproducibility}{8}{section.10}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {A}Appendix: Qualitative Figures}{9}{appendix.A}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {A.1}Prediction Mosaics}{9}{subsection.A.1}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces U-Net (ResNet50): qualitative segmentation overview on test images. Predictions are fragmented, with most foreground categories missed entirely.}}{9}{figure.caption.6}\protected@file@percent }
+\newlabel{fig:mosaic_unet}{{1}{9}{U-Net (ResNet50): qualitative segmentation overview on test images. Predictions are fragmented, with most foreground categories missed entirely}{figure.caption.6}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces DeepLabV3 (ResNet50): qualitative segmentation overview. Masks are more coherent with better foreground detection, though boundary precision varies.}}{10}{figure.caption.7}\protected@file@percent }
+\newlabel{fig:mosaic_deeplabv3}{{2}{10}{DeepLabV3 (ResNet50): qualitative segmentation overview. Masks are more coherent with better foreground detection, though boundary precision varies}{figure.caption.7}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces SAM2 (LoRA + FPN Decoder): qualitative segmentation overview. Predictions most closely match ground truth, with sharp boundaries and reliable small-object recovery.}}{11}{figure.caption.8}\protected@file@percent }
+\newlabel{fig:mosaic_sam2}{{3}{11}{SAM2 (LoRA + FPN Decoder): qualitative segmentation overview. Predictions most closely match ground truth, with sharp boundaries and reliable small-object recovery}{figure.caption.8}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {A.2}Best and Worst Cases: Person Class}{12}{subsection.A.2}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces U-Net: top-3 best and top-3 worst predictions for the person class.}}{12}{figure.caption.9}\protected@file@percent }
+\newlabel{fig:bw_unet}{{4}{12}{U-Net: top-3 best and top-3 worst predictions for the person class}{figure.caption.9}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {5}{\ignorespaces DeepLabV3: top-3 best and top-3 worst predictions for the person class.}}{13}{figure.caption.10}\protected@file@percent }
+\newlabel{fig:bw_deeplabv3}{{5}{13}{DeepLabV3: top-3 best and top-3 worst predictions for the person class}{figure.caption.10}{}}
+\bibstyle{plain}
+\bibcite{chen2017rethinking}{{1}{}{{}}{{}}}
+\@writefile{lof}{\contentsline {figure}{\numberline {6}{\ignorespaces SAM2: top-3 best and top-3 worst predictions for the person class.}}{14}{figure.caption.11}\protected@file@percent }
+\newlabel{fig:bw_sam2}{{6}{14}{SAM2: top-3 best and top-3 worst predictions for the person class}{figure.caption.11}{}}
+\bibcite{everingham2010pascal}{{2}{}{{}}{{}}}
+\bibcite{hu2022lora}{{3}{}{{}}{{}}}
+\bibcite{loshchilov2019adamw}{{4}{}{{}}{{}}}
+\bibcite{ravi2024sam2}{{5}{}{{}}{{}}}
+\bibcite{ronneberger2015unet}{{6}{}{{}}{{}}}
+\providecommand\NAT@force@numbers{}\NAT@force@numbers
+\gdef \@abspage@last{15}
