@@ -3,7 +3,7 @@
 Three architectures. One benchmark. A clear winner.
 
 <p align="center">
-  <img src="outputs/eval/sam2/sam2-default/prediction_mosaic.png" width="480"/>
+  <img src="assets/sam2_mosaic.png" width="480"/>
   <br>
   <em>SAM2 with LoRA — 0.63 mIoU, 5.1M trainable parameters</em>
 </p>
